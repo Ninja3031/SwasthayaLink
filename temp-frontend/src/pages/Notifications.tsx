@@ -10,23 +10,21 @@ import {
   Check,
   Clock,
   AlertCircle,
+  Loader2,
+  CheckCircle,
 } from 'lucide-react';
-import { mockNotifications } from '../data/mockData';
-import { Notification } from '../types';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useNotifications, type Notification } from '../hooks/useNotifications';
 
 export const Notifications: React.FC = () => {
-  const [notifications, setNotifications] = useLocalStorage<Notification[]>('notifications', mockNotifications);
-
-  const handleMarkAsRead = (id: string) => {
-    setNotifications(notifications.map(notif => 
-      notif.id === id ? { ...notif, read: true } : notif
-    ));
-  };
-
-  const handleMarkAllAsRead = () => {
-    setNotifications(notifications.map(notif => ({ ...notif, read: true })));
-  };
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    error,
+    markAsRead,
+    markAllAsRead,
+    getNotificationsByType
+  } = useNotifications();
 
   const getNotificationIcon = (type: Notification['type']) => {
     switch (type) {
@@ -36,8 +34,10 @@ export const Notifications: React.FC = () => {
         return <Calendar className="h-5 w-5 text-blue-600" />;
       case 'report':
         return <FileText className="h-5 w-5 text-green-600" />;
-      case 'system':
-        return <Settings className="h-5 w-5 text-gray-600" />;
+      case 'prescription':
+        return <FileText className="h-5 w-5 text-orange-600" />;
+      case 'general':
+        return <Bell className="h-5 w-5 text-gray-600" />;
       default:
         return <Bell className="h-5 w-5 text-gray-600" />;
     }
@@ -51,14 +51,16 @@ export const Notifications: React.FC = () => {
         return 'bg-blue-100';
       case 'report':
         return 'bg-green-100';
-      case 'system':
+      case 'prescription':
+        return 'bg-orange-100';
+      case 'general':
         return 'bg-gray-100';
       default:
         return 'bg-gray-100';
     }
   };
 
-  const unreadCount = notifications.filter(notif => !notif.read).length;
+  // Filter notifications by date
   const todayNotifications = notifications.filter(notif => {
     const today = new Date().toDateString();
     const notifDate = new Date(notif.createdAt).toDateString();
@@ -81,7 +83,7 @@ export const Notifications: React.FC = () => {
         </div>
         {unreadCount > 0 && (
           <Button
-            onClick={handleMarkAllAsRead}
+            onClick={markAllAsRead}
             variant="outline"
             icon={Check}
           >
@@ -90,6 +92,16 @@ export const Notifications: React.FC = () => {
         )}
       </div>
 
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span>Error loading notifications: {error}</span>
+          </div>
+        </div>
+      )}
+
       {/* Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-blue-500">
@@ -97,7 +109,14 @@ export const Notifications: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Total Notifications</p>
-                <p className="text-2xl font-bold text-blue-600">{notifications.length}</p>
+                {isLoading ? (
+                  <div className="flex items-center">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-gray-400">Loading...</span>
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-blue-600">{notifications.length}</p>
+                )}
               </div>
               <Bell className="h-8 w-8 text-blue-500" />
             </div>
@@ -143,11 +162,27 @@ export const Notifications: React.FC = () => {
         </Card>
       </div>
 
-      {/* Today's Notifications */}
-      {todayNotifications.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Today</h2>
-          <div className="space-y-3">
+      {/* Loading State */}
+      {isLoading ? (
+        <div className="flex justify-center items-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <span className="ml-2 text-gray-600">Loading notifications...</span>
+        </div>
+      ) : notifications.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <Bell className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No notifications yet</h3>
+            <p className="text-gray-600">You'll see your health alerts and reminders here.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <>
+          {/* Today's Notifications */}
+          {todayNotifications.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Today</h2>
+              <div className="space-y-3">
             {todayNotifications.map((notification) => (
               <Card
                 key={notification.id}
@@ -177,7 +212,7 @@ export const Notifications: React.FC = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleMarkAsRead(notification.id)}
+                              onClick={() => markAsRead(notification.id)}
                             >
                               Mark as Read
                             </Button>
@@ -227,7 +262,7 @@ export const Notifications: React.FC = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => handleMarkAsRead(notification.id)}
+                              onClick={() => markAsRead(notification.id)}
                             >
                               Mark as Read
                             </Button>
@@ -239,21 +274,10 @@ export const Notifications: React.FC = () => {
                 </CardContent>
               </Card>
             ))}
+            </div>
           </div>
-        </div>
-      )}
-
-      {/* Empty State */}
-      {notifications.length === 0 && (
-        <Card>
-          <CardContent className="p-12 text-center">
-            <Bell className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">No notifications yet</h3>
-            <p className="text-gray-600">
-              You'll see important health alerts, medication reminders, and appointment notifications here.
-            </p>
-          </CardContent>
-        </Card>
+        )}
+        </>
       )}
     </div>
   );

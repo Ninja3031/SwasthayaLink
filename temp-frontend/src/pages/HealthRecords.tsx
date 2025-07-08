@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from '../components/UI/Card';
 import { Button } from '../components/UI/Button';
 import { Modal } from '../components/UI/Modal';
@@ -12,105 +12,114 @@ import {
   Building,
   Activity,
   Zap,
+  Loader2,
+  AlertCircle,
+  CheckCircle,
+  X,
 } from 'lucide-react';
-import { mockHealthRecords } from '../data/mockData';
-import { HealthRecord } from '../types';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { reportService, type Report } from '../services';
 
 export const HealthRecords: React.FC = () => {
-  const [healthRecords, setHealthRecords] = useLocalStorage<HealthRecord[]>('healthRecords', mockHealthRecords);
+  const [reports, setReports] = useState<Report[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<HealthRecord | null>(null);
+  const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
-  const [uploadForm, setUploadForm] = useState({
-    title: '',
-    type: 'general' as HealthRecord['type'],
-    doctor: '',
-    hospital: '',
-    notes: '',
-  });
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Fetch reports on component mount
+  useEffect(() => {
+    fetchReports();
+  }, []);
+
+  const fetchReports = async () => {
+    try {
+      setIsLoading(true);
+      setError('');
+      const fetchedReports = await reportService.getReports();
+      setReports(fetchedReports);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to fetch reports');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Simulate OCR processing
-      setIsProcessing(true);
-      setTimeout(() => {
-        const newRecord: HealthRecord = {
-          id: Date.now().toString(),
-          title: uploadForm.title || file.name,
-          date: new Date().toISOString().split('T')[0],
-          type: uploadForm.type,
-          highlights: generateMockHighlights(uploadForm.type),
-          doctor: uploadForm.doctor,
-          hospital: uploadForm.hospital,
-          file,
-        };
-        setHealthRecords([newRecord, ...healthRecords]);
-        setIsProcessing(false);
-        setIsUploadModalOpen(false);
-        setUploadForm({ title: '', type: 'general', doctor: '', hospital: '', notes: '' });
-      }, 2000);
+      // Validate file type
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+      if (!allowedTypes.includes(file.type)) {
+        setError('Please select a valid file type (JPEG, PNG, PDF)');
+        return;
+      }
+
+      // Validate file size (max 10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        setError('File size must be less than 10MB');
+        return;
+      }
+
+      setSelectedFile(file);
+      setError('');
     }
   };
 
-  const generateMockHighlights = (type: HealthRecord['type']) => {
-    switch (type) {
-      case 'blood_test':
-        return {
-          bp: Math.floor(Math.random() * 30 + 110) + '/' + Math.floor(Math.random() * 20 + 70),
-          glucose: Math.floor(Math.random() * 40 + 80) + ' mg/dL',
-          cholesterol: Math.floor(Math.random() * 50 + 150) + ' mg/dL',
-          hemoglobin: Math.floor(Math.random() * 3 + 12) + ' g/dL',
-        };
-      case 'scan':
-        return {
-          result: Math.random() > 0.5 ? 'Normal' : 'Abnormal findings detected',
-          organs: 'All organs appear normal',
-        };
-      case 'prescription':
-        return {
-          medications: Math.floor(Math.random() * 5 + 1) + ' prescribed',
-          duration: Math.floor(Math.random() * 14 + 7) + ' days',
-        };
-      default:
-        return {
-          status: 'Report processed successfully',
-        };
+  const handleUploadReport = async () => {
+    if (!selectedFile) return;
+
+    setIsUploading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await reportService.uploadReport(selectedFile);
+      setReports([result.report, ...reports]);
+      setSuccess('Report uploaded and processed successfully!');
+      setIsUploadModalOpen(false);
+      setSelectedFile(null);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to upload report');
+    } finally {
+      setIsUploading(false);
     }
   };
 
-  const getRecordIcon = (type: HealthRecord['type']) => {
-    switch (type) {
-      case 'blood_test':
-        return <Activity className="h-5 w-5 text-red-500" />;
-      case 'scan':
-        return <Zap className="h-5 w-5 text-blue-500" />;
-      case 'prescription':
-        return <FileText className="h-5 w-5 text-green-500" />;
-      default:
-        return <FileText className="h-5 w-5 text-gray-500" />;
-    }
-  };
-
-  const getRecordTypeColor = (type: HealthRecord['type']) => {
-    switch (type) {
-      case 'blood_test':
-        return 'bg-red-100 text-red-800';
-      case 'scan':
-        return 'bg-blue-100 text-blue-800';
-      case 'prescription':
-        return 'bg-green-100 text-green-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const viewRecord = (record: HealthRecord) => {
-    setSelectedRecord(record);
+  const handleViewReport = (report: Report) => {
+    setSelectedReport(report);
     setIsViewModalOpen(true);
   };
+
+  const handleDeleteReport = async (reportId: string) => {
+    if (!confirm('Are you sure you want to delete this report?')) return;
+
+    try {
+      await reportService.deleteReport(reportId);
+      setReports(reports.filter(r => r.id !== reportId));
+      setSuccess('Report deleted successfully');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to delete report');
+    }
+  };
+
+  const getFileTypeIcon = (fileType: string) => {
+    if (fileType.includes('pdf')) return <FileText className="h-5 w-5" />;
+    if (fileType.includes('image')) return <Eye className="h-5 w-5" />;
+    return <FileText className="h-5 w-5" />;
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
 
   return (
     <div className="space-y-6">
@@ -124,37 +133,48 @@ export const HealthRecords: React.FC = () => {
           onClick={() => setIsUploadModalOpen(true)}
           icon={Upload}
           className="shadow-lg"
+          disabled={isLoading}
         >
           Upload Report
         </Button>
       </div>
 
-      {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border-l-4 border-l-red-500">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-gray-600">Blood Tests</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {healthRecords.filter(r => r.type === 'blood_test').length}
-                </p>
-              </div>
-              <Activity className="h-8 w-8 text-red-500" />
-            </div>
-          </CardContent>
-        </Card>
+      {/* Success/Error Messages */}
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <CheckCircle className="h-5 w-5 mr-2" />
+            <span>{success}</span>
+          </div>
+        </div>
+      )}
 
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Statistics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-blue-500">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Scans</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {healthRecords.filter(r => r.type === 'scan').length}
-                </p>
+                <p className="text-sm text-gray-600">Total Reports</p>
+                {isLoading ? (
+                  <div className="flex items-center">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-gray-400">Loading...</span>
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-blue-600">{reports.length}</p>
+                )}
               </div>
-              <Zap className="h-8 w-8 text-blue-500" />
+              <FileText className="h-8 w-8 text-blue-500" />
             </div>
           </CardContent>
         </Card>
@@ -163,12 +183,31 @@ export const HealthRecords: React.FC = () => {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Prescriptions</p>
+                <p className="text-sm text-gray-600">OCR Processed</p>
                 <p className="text-2xl font-bold text-green-600">
-                  {healthRecords.filter(r => r.type === 'prescription').length}
+                  {reports.filter(r => r.ocrResult && !r.ocrResult.error).length}
                 </p>
               </div>
-              <FileText className="h-8 w-8 text-green-500" />
+              <Activity className="h-8 w-8 text-green-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-yellow-500">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">This Month</p>
+                <p className="text-2xl font-bold text-yellow-600">
+                  {reports.filter(r => {
+                    const reportDate = new Date(r.createdAt);
+                    const now = new Date();
+                    return reportDate.getMonth() === now.getMonth() &&
+                           reportDate.getFullYear() === now.getFullYear();
+                  }).length}
+                </p>
+              </div>
+              <Calendar className="h-8 w-8 text-yellow-500" />
             </div>
           </CardContent>
         </Card>
@@ -177,258 +216,292 @@ export const HealthRecords: React.FC = () => {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Total Records</p>
-                <p className="text-2xl font-bold text-purple-600">{healthRecords.length}</p>
+                <p className="text-sm text-gray-600">File Types</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {new Set(reports.map(r => r.fileType.split('/')[0])).size}
+                </p>
               </div>
-              <FileText className="h-8 w-8 text-purple-500" />
+              <Zap className="h-8 w-8 text-purple-500" />
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Records List */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {healthRecords.map((record) => (
-          <Card key={record.id} className="hover:shadow-lg transition-shadow">
-            <CardHeader className="pb-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center space-x-3">
-                  {getRecordIcon(record.type)}
-                  <div>
-                    <h3 className="font-semibold text-gray-900">{record.title}</h3>
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRecordTypeColor(record.type)}`}>
-                      {record.type.replace('_', ' ')}
-                    </span>
+      {/* Reports List */}
+      {isLoading ? (
+        <div className="flex justify-center items-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <span className="ml-2 text-gray-600">Loading reports...</span>
+        </div>
+      ) : reports.length === 0 ? (
+        <Card>
+          <CardContent className="text-center py-12">
+            <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No reports uploaded yet</h3>
+            <p className="text-gray-600 mb-4">Upload your first medical report to get started with OCR processing.</p>
+            <Button onClick={() => setIsUploadModalOpen(true)} icon={Upload}>
+              Upload Your First Report
+            </Button>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {reports.map((report) => (
+            <Card key={report.id} className="hover:shadow-lg transition-shadow">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center space-x-3">
+                    {getFileTypeIcon(report.fileType)}
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-gray-900 truncate">
+                        {report.filePath.split('/').pop() || 'Medical Report'}
+                      </h3>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {report.fileType.split('/')[1]?.toUpperCase() || 'FILE'}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center text-sm text-gray-600">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  {new Date(record.date).toLocaleDateString()}
-                </div>
-                {record.doctor && (
-                  <div className="flex items-center text-sm text-gray-600">
-                    <User className="h-4 w-4 mr-2" />
-                    {record.doctor}
-                  </div>
-                )}
-                {record.hospital && (
-                  <div className="flex items-center text-sm text-gray-600">
-                    <Building className="h-4 w-4 mr-2" />
-                    {record.hospital}
-                  </div>
-                )}
-
-                {/* Highlights */}
-                <div className="bg-gray-50 rounded-lg p-3">
-                  <p className="text-xs font-medium text-gray-700 mb-2">Key Highlights</p>
-                  <div className="space-y-1">
-                    {Object.entries(record.highlights).map(([key, value]) => (
-                      <div key={key} className="flex justify-between text-xs">
-                        <span className="text-gray-600 capitalize">{key.replace('_', ' ')}:</span>
-                        <span className="font-medium text-gray-900">{value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Actions */}
-                <div className="flex space-x-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    icon={Eye}
-                    onClick={() => viewRecord(record)}
-                    className="flex-1"
+                  <button
+                    onClick={() => handleDeleteReport(report.id)}
+                    className="text-gray-400 hover:text-red-600 transition-colors"
                   >
-                    View
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    icon={Download}
-                    className="flex-1"
-                  >
-                    Download
-                  </Button>
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-center text-sm text-gray-600">
+                    <Calendar className="h-4 w-4 mr-2" />
+                    {new Date(report.createdAt).toLocaleDateString()}
+                  </div>
+
+                  {/* OCR Results */}
+                  {report.ocrResult && (
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <p className="text-xs font-medium text-gray-700 mb-2">OCR Processing</p>
+                      {report.ocrResult.error ? (
+                        <div className="flex items-center text-xs text-red-600">
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                          <span>Processing failed</span>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="flex items-center text-xs text-green-600">
+                            <CheckCircle className="h-3 w-3 mr-1" />
+                            <span>Successfully processed</span>
+                          </div>
+                          {report.ocrResult.extractedText && (
+                            <p className="text-xs text-gray-600 truncate">
+                              {report.ocrResult.extractedText.substring(0, 100)}...
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      icon={Eye}
+                      onClick={() => handleViewReport(report)}
+                      className="flex-1"
+                    >
+                      View Details
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      icon={Download}
+                      className="flex-1"
+                      onClick={() => window.open(`/api/reports/${report.id}/download`, '_blank')}
+                    >
+                      Download
+                    </Button>
+                  
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
 
       {/* Upload Modal */}
       <Modal
         isOpen={isUploadModalOpen}
-        onClose={() => setIsUploadModalOpen(false)}
-        title="Upload Health Record"
+        onClose={() => {
+          setIsUploadModalOpen(false);
+          setSelectedFile(null);
+          setError('');
+        }}
+        title="Upload Medical Report"
         size="lg"
       >
         <div className="space-y-4">
           <div>
-            <label htmlFor="record-title" className="block text-sm font-medium text-gray-700">
-              Report Title
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Select File
             </label>
-            <input
-              type="text"
-              id="record-title"
-              value={uploadForm.title}
-              onChange={(e) => setUploadForm({ ...uploadForm, title: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              placeholder="Enter report title"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="record-type" className="block text-sm font-medium text-gray-700">
-              Record Type
-            </label>
-            <select
-              id="record-type"
-              value={uploadForm.type}
-              onChange={(e) => setUploadForm({ ...uploadForm, type: e.target.value as HealthRecord['type'] })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            >
-              <option value="general">General Report</option>
-              <option value="blood_test">Blood Test</option>
-              <option value="scan">Scan/Imaging</option>
-              <option value="prescription">Prescription</option>
-            </select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="doctor-name" className="block text-sm font-medium text-gray-700">
-                Doctor Name
-              </label>
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center">
               <input
-                type="text"
-                id="doctor-name"
-                value={uploadForm.doctor}
-                onChange={(e) => setUploadForm({ ...uploadForm, doctor: e.target.value })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                placeholder="Enter doctor name"
+                type="file"
+                onChange={handleFileSelect}
+                accept=".jpg,.jpeg,.png,.pdf"
+                className="hidden"
+                id="file-upload"
               />
-            </div>
-            <div>
-              <label htmlFor="hospital-name" className="block text-sm font-medium text-gray-700">
-                Hospital/Clinic
+              <label htmlFor="file-upload" className="cursor-pointer">
+                <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <p className="text-sm text-gray-600 mb-2">
+                  Click to upload or drag and drop
+                </p>
+                <p className="text-xs text-gray-500">
+                  Supports: JPEG, PNG, PDF (Max 10MB)
+                </p>
               </label>
-              <input
-                type="text"
-                id="hospital-name"
-                value={uploadForm.hospital}
-                onChange={(e) => setUploadForm({ ...uploadForm, hospital: e.target.value })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                placeholder="Enter hospital name"
-              />
             </div>
-          </div>
 
-          <div>
-            <label htmlFor="file-upload" className="block text-sm font-medium text-gray-700">
-              Upload File
-            </label>
-            <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md">
-              <div className="space-y-1 text-center">
-                <Upload className="mx-auto h-12 w-12 text-gray-400" />
-                <div className="flex text-sm text-gray-600">
-                  <label
-                    htmlFor="file-upload"
-                    className="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500"
+            {selectedFile && (
+              <div className="mt-3 p-3 bg-blue-50 rounded-lg">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    {getFileTypeIcon(selectedFile.type)}
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-gray-900">{selectedFile.name}</p>
+                      <p className="text-xs text-gray-500">{formatFileSize(selectedFile.size)}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setSelectedFile(null)}
+                    className="text-gray-400 hover:text-red-600"
                   >
-                    <span>Upload a file</span>
-                    <input
-                      id="file-upload"
-                      name="file-upload"
-                      type="file"
-                      className="sr-only"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={handleFileUpload}
-                    />
-                  </label>
-                  <p className="pl-1">or drag and drop</p>
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-                <p className="text-xs text-gray-500">PDF, PNG, JPG up to 10MB</p>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="flex items-start">
+              <Activity className="h-5 w-5 text-blue-600 mt-0.5 mr-3" />
+              <div>
+                <h4 className="text-sm font-medium text-blue-900">OCR Processing</h4>
+                <p className="text-sm text-blue-700 mt-1">
+                  Your uploaded report will be automatically processed using OCR technology to extract key medical information and make it searchable.
+                </p>
               </div>
             </div>
           </div>
-
-          {isProcessing && (
-            <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-              <div className="flex items-center">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-3"></div>
-                <p className="text-sm text-blue-800">Processing with OCR... Extracting key information...</p>
-              </div>
-            </div>
-          )}
 
           <div className="flex justify-end space-x-3">
-            <Button variant="outline" onClick={() => setIsUploadModalOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsUploadModalOpen(false);
+                setSelectedFile(null);
+                setError('');
+              }}
+              disabled={isUploading}
+            >
               Cancel
+            </Button>
+            <Button
+              onClick={handleUploadReport}
+              disabled={!selectedFile || isUploading}
+            >
+              {isUploading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Uploading & Processing...
+                </>
+              ) : (
+                'Upload Report'
+              )}
             </Button>
           </div>
         </div>
       </Modal>
 
-      {/* View Record Modal */}
+      {/* View Report Modal */}
       <Modal
         isOpen={isViewModalOpen}
         onClose={() => setIsViewModalOpen(false)}
-        title={selectedRecord?.title || 'Health Record'}
+        title="Report Details"
         size="lg"
       >
-        {selectedRecord && (
+        {selectedReport && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-sm font-medium text-gray-700">Date</p>
-                <p className="text-sm text-gray-900">{new Date(selectedRecord.date).toLocaleDateString()}</p>
+                <label className="block text-sm font-medium text-gray-700">File Name</label>
+                <p className="mt-1 text-sm text-gray-900">
+                  {selectedReport.filePath.split('/').pop()}
+                </p>
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-700">Type</p>
-                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getRecordTypeColor(selectedRecord.type)}`}>
-                  {selectedRecord.type.replace('_', ' ')}
-                </span>
+                <label className="block text-sm font-medium text-gray-700">File Type</label>
+                <p className="mt-1 text-sm text-gray-900">{selectedReport.fileType}</p>
               </div>
-              {selectedRecord.doctor && (
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Doctor</p>
-                  <p className="text-sm text-gray-900">{selectedRecord.doctor}</p>
-                </div>
-              )}
-              {selectedRecord.hospital && (
-                <div>
-                  <p className="text-sm font-medium text-gray-700">Hospital</p>
-                  <p className="text-sm text-gray-900">{selectedRecord.hospital}</p>
-                </div>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Upload Date</label>
+                <p className="mt-1 text-sm text-gray-900">
+                  {new Date(selectedReport.createdAt).toLocaleString()}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Status</label>
+                <p className="mt-1">
+                  {selectedReport.ocrResult?.error ? (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                      Processing Failed
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      Processed Successfully
+                    </span>
+                  )}
+                </p>
+              </div>
             </div>
 
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Key Highlights</p>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="grid grid-cols-2 gap-3">
-                  {Object.entries(selectedRecord.highlights).map(([key, value]) => (
-                    <div key={key}>
-                      <p className="text-xs font-medium text-gray-600 capitalize">{key.replace('_', ' ')}</p>
-                      <p className="text-sm font-semibold text-gray-900">{value}</p>
-                    </div>
-                  ))}
+            {selectedReport.ocrResult && !selectedReport.ocrResult.error && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Extracted Text
+                </label>
+                <div className="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
+                  <p className="text-sm text-gray-900 whitespace-pre-wrap">
+                    {selectedReport.ocrResult.extractedText || 'No text extracted'}
+                  </p>
                 </div>
               </div>
-            </div>
+            )}
+
+            {selectedReport.ocrResult?.structuredData && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Structured Data
+                </label>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <pre className="text-sm text-gray-900 whitespace-pre-wrap">
+                    {JSON.stringify(selectedReport.ocrResult.structuredData, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
 
             <div className="flex justify-end space-x-3">
-              <Button variant="outline" icon={Download}>
-                Download
-              </Button>
-              <Button onClick={() => setIsViewModalOpen(false)}>
+              <Button variant="outline" onClick={() => setIsViewModalOpen(false)}>
                 Close
+              </Button>
+              <Button
+                onClick={() => window.open(`/api/reports/${selectedReport.id}/download`, '_blank')}
+                icon={Download}
+              >
+                Download Original
               </Button>
             </div>
           </div>

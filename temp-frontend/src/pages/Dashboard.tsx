@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '../components/UI/Card';
 import { Button } from '../components/UI/Button';
@@ -14,22 +14,39 @@ import {
   AlertCircle,
   Heart,
   Weight,
+  Loader2,
 } from 'lucide-react';
-import { mockAppointments, mockMedications, mockGlucoseReadings, mockVitalReadings } from '../data/mockData';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { GlucoseReading, VitalReading } from '../types';
+import { useHealthData } from '../hooks/useHealthData';
+import { useAuth } from '../hooks/useAuth';
+import { useNotifications } from '../hooks/useNotifications';
+import { mockAppointments, mockMedications } from '../data/mockData';
 
 export const Dashboard: React.FC = () => {
   const [isGlucoseModalOpen, setIsGlucoseModalOpen] = useState(false);
-  const [glucoseReadings, setGlucoseReadings] = useLocalStorage<GlucoseReading[]>('glucoseReadings', mockGlucoseReadings);
-  const [vitalReadings, setVitalReadings] = useLocalStorage<VitalReading[]>('vitalReadings', mockVitalReadings);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [newGlucoseReading, setNewGlucoseReading] = useState({
-    fastingGlucose: '',
-    postMealGlucose: '',
+    value: '',
     type: 'fasting' as 'fasting' | 'random' | 'post_meal',
     notes: '',
   });
 
+  const { user } = useAuth();
+  const { healthData, addHealthData, getHealthDataByType, getLatestReading, isLoading, error } = useHealthData();
+  const { notifications } = useNotifications();
+
+  // Get health data by type
+  const glucoseReadings = getHealthDataByType('glucose');
+  const bloodPressureReadings = getHealthDataByType('blood_pressure_systolic');
+  const weightReadings = getHealthDataByType('weight');
+  const heartRateReadings = getHealthDataByType('heart_rate');
+
+  // Get latest readings
+  const latestGlucoseReading = getLatestReading('glucose');
+  const latestBPReading = getLatestReading('blood_pressure_systolic');
+  const latestWeightReading = getLatestReading('weight');
+  const latestHeartRateReading = getLatestReading('heart_rate');
+
+  // Mock data for appointments and medications (until those APIs are implemented)
   const upcomingAppointments = mockAppointments.filter(
     (apt) => apt.status === 'scheduled' && new Date(apt.date) > new Date()
   );
@@ -41,24 +58,29 @@ export const Dashboard: React.FC = () => {
     return today >= startDate && today <= endDate;
   });
 
-  const latestGlucoseReading = glucoseReadings[0];
-  const latestBPReading = vitalReadings.find(r => r.type === 'blood_pressure');
-  const latestWeightReading = vitalReadings.find(r => r.type === 'weight');
-  const predictedGlucose = latestGlucoseReading?.fastingGlucose ? Math.round(latestGlucoseReading.fastingGlucose * 0.95) : 0;
+  // Calculate predicted glucose (simple prediction based on latest reading)
+  const predictedGlucose = latestGlucoseReading?.value
+    ? Math.round(Number(latestGlucoseReading.value) * 0.95)
+    : 0;
 
-  const handleAddGlucoseReading = () => {
-    if (newGlucoseReading.fastingGlucose || newGlucoseReading.postMealGlucose) {
-      const reading: GlucoseReading = {
-        id: Date.now().toString(),
-        date: new Date().toISOString().split('T')[0],
-        fastingGlucose: newGlucoseReading.fastingGlucose ? parseInt(newGlucoseReading.fastingGlucose) : undefined,
-        postMealGlucose: newGlucoseReading.postMealGlucose ? parseInt(newGlucoseReading.postMealGlucose) : undefined,
-        type: newGlucoseReading.type,
-        notes: newGlucoseReading.notes,
-      };
-      setGlucoseReadings([reading, ...glucoseReadings]);
-      setNewGlucoseReading({ fastingGlucose: '', postMealGlucose: '', type: 'fasting', notes: '' });
+  const handleAddGlucoseReading = async () => {
+    if (!newGlucoseReading.value) return;
+
+    setIsSubmitting(true);
+    try {
+      await addHealthData({
+        type: 'glucose',
+        value: parseFloat(newGlucoseReading.value),
+        unit: 'mg/dL',
+      });
+
+      setNewGlucoseReading({ value: '', type: 'fasting', notes: '' });
       setIsGlucoseModalOpen(false);
+    } catch (error) {
+      console.error('Failed to add glucose reading:', error);
+      // You could add a toast notification here
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -68,16 +90,29 @@ export const Dashboard: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600">Welcome back! Here's your health overview.</p>
+          <p className="text-gray-600">
+            Welcome back, {user?.name}! Here's your health overview.
+          </p>
         </div>
         <Button
           onClick={() => setIsGlucoseModalOpen(true)}
           icon={Plus}
           className="shadow-lg"
+          disabled={isLoading}
         >
           Add Glucose Reading
         </Button>
       </div>
+
+      {/* Error State */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span>Error loading health data: {error}</span>
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -86,16 +121,25 @@ export const Dashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Last Glucose Reading</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {latestGlucoseReading?.fastingGlucose || '--'} mg/dL
-                </p>
+                {isLoading ? (
+                  <div className="flex items-center">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-gray-400">Loading...</span>
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-blue-600">
+                    {latestGlucoseReading?.value || '--'} {latestGlucoseReading?.unit || 'mg/dL'}
+                  </p>
+                )}
               </div>
               <Activity className="h-8 w-8 text-blue-500" />
             </div>
           </CardHeader>
           <CardContent className="pt-0">
             <p className="text-xs text-gray-500">
-              {latestGlucoseReading?.date ? new Date(latestGlucoseReading.date).toLocaleDateString() : 'No data'}
+              {latestGlucoseReading?.date
+                ? new Date(latestGlucoseReading.date).toLocaleDateString()
+                : 'No data available'}
             </p>
           </CardContent>
         </Card>
@@ -105,16 +149,25 @@ export const Dashboard: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Last BP Reading</p>
-                <p className="text-2xl font-bold text-red-600">
-                  {latestBPReading ? `${latestBPReading.value.systolic}/${latestBPReading.value.diastolic}` : '--'}
-                </p>
+                {isLoading ? (
+                  <div className="flex items-center">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-gray-400">Loading...</span>
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-red-600">
+                    {latestBPReading?.value || '--'} {latestBPReading?.unit || 'mmHg'}
+                  </p>
+                )}
               </div>
               <Heart className="h-8 w-8 text-red-500" />
             </div>
           </CardHeader>
           <CardContent className="pt-0">
             <p className="text-xs text-gray-500">
-              {latestBPReading?.date ? new Date(latestBPReading.date).toLocaleDateString() : 'No data'}
+              {latestBPReading?.date
+                ? new Date(latestBPReading.date).toLocaleDateString()
+                : 'No data available'}
             </p>
           </CardContent>
         </Card>
@@ -337,29 +390,17 @@ export const Dashboard: React.FC = () => {
       >
         <div className="space-y-4">
           <div>
-            <label htmlFor="fasting-glucose" className="block text-sm font-medium text-gray-700">
-              Fasting Glucose (mg/dL)
+            <label htmlFor="glucose-value" className="block text-sm font-medium text-gray-700">
+              Glucose Reading (mg/dL)
             </label>
             <input
               type="number"
-              id="fasting-glucose"
-              value={newGlucoseReading.fastingGlucose}
-              onChange={(e) => setNewGlucoseReading({ ...newGlucoseReading, fastingGlucose: e.target.value })}
+              id="glucose-value"
+              value={newGlucoseReading.value}
+              onChange={(e) => setNewGlucoseReading({ ...newGlucoseReading, value: e.target.value })}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
               placeholder="e.g., 95"
-            />
-          </div>
-          <div>
-            <label htmlFor="post-meal-glucose" className="block text-sm font-medium text-gray-700">
-              Post-Meal Glucose (mg/dL)
-            </label>
-            <input
-              type="number"
-              id="post-meal-glucose"
-              value={newGlucoseReading.postMealGlucose}
-              onChange={(e) => setNewGlucoseReading({ ...newGlucoseReading, postMealGlucose: e.target.value })}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              placeholder="e.g., 140"
+              required
             />
           </div>
           <div>
@@ -391,10 +432,26 @@ export const Dashboard: React.FC = () => {
             />
           </div>
           <div className="flex justify-end space-x-3">
-            <Button variant="outline" onClick={() => setIsGlucoseModalOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsGlucoseModalOpen(false)}
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
-            <Button onClick={handleAddGlucoseReading}>Add Reading</Button>
+            <Button
+              onClick={handleAddGlucoseReading}
+              disabled={isSubmitting || !newGlucoseReading.value}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Adding...
+                </>
+              ) : (
+                'Add Reading'
+              )}
+            </Button>
           </div>
         </div>
       </Modal>

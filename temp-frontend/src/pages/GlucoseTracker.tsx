@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from '../components/UI/Card';
 import { Button } from '../components/UI/Button';
 import { Modal } from '../components/UI/Modal';
@@ -9,41 +9,52 @@ import {
   Calendar,
   Target,
   Brain,
+  Loader2,
+  AlertCircle,
+  CheckCircle,
 } from 'lucide-react';
-import { mockGlucoseReadings } from '../data/mockData';
-import { GlucoseReading } from '../types';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useHealthData } from '../hooks/useHealthData';
 
 export const GlucoseTracker: React.FC = () => {
-  const [glucoseReadings, setGlucoseReadings] = useLocalStorage<GlucoseReading[]>('glucoseReadings', mockGlucoseReadings);
+  const { healthData, addHealthData, getHealthDataByType, isLoading, error } = useHealthData();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPredictionLoading, setPredictionLoading] = useState(false);
   const [predictedGlucose, setPredictedGlucose] = useState<number | null>(null);
+  const [success, setSuccess] = useState('');
   const [glucoseForm, setGlucoseForm] = useState({
-    date: new Date().toISOString().split('T')[0],
-    fastingGlucose: '',
-    postMealGlucose: '',
+    value: '',
+    type: 'fasting' as 'fasting' | 'post_meal' | 'random',
     notes: '',
   });
 
-  const handleAddReading = () => {
-    if (glucoseForm.fastingGlucose || glucoseForm.postMealGlucose) {
-      const newReading: GlucoseReading = {
-        id: Date.now().toString(),
-        date: glucoseForm.date,
-        fastingGlucose: glucoseForm.fastingGlucose ? parseInt(glucoseForm.fastingGlucose) : undefined,
-        postMealGlucose: glucoseForm.postMealGlucose ? parseInt(glucoseForm.postMealGlucose) : undefined,
-        type: glucoseForm.fastingGlucose ? 'fasting' : 'post_meal',
-        notes: glucoseForm.notes,
-      };
-      setGlucoseReadings([newReading, ...glucoseReadings]);
+  // Get glucose readings from health data
+  const glucoseReadings = getHealthDataByType('glucose');
+
+  const handleAddReading = async () => {
+    if (!glucoseForm.value) return;
+
+    setIsSubmitting(true);
+    setSuccess('');
+
+    try {
+      await addHealthData({
+        type: 'glucose',
+        value: parseFloat(glucoseForm.value),
+        unit: 'mg/dL',
+      });
+
+      setSuccess('Glucose reading added successfully!');
       setIsAddModalOpen(false);
       setGlucoseForm({
-        date: new Date().toISOString().split('T')[0],
-        fastingGlucose: '',
-        postMealGlucose: '',
+        value: '',
+        type: 'fasting',
         notes: '',
       });
+    } catch (err) {
+      console.error('Failed to add glucose reading:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -51,24 +62,30 @@ export const GlucoseTracker: React.FC = () => {
     setPredictionLoading(true);
     // Simulate API call to backend regression model
     setTimeout(() => {
-      const avgFasting = glucoseReadings
-        .filter(r => r.fastingGlucose)
-        .reduce((sum, r) => sum + (r.fastingGlucose || 0), 0) / glucoseReadings.filter(r => r.fastingGlucose).length;
-      
-      // Simple prediction logic (in real app, this would be from ML model)
-      const prediction = Math.round(avgFasting * 0.98 + Math.random() * 10 - 5);
-      setPredictedGlucose(prediction);
+      if (glucoseReadings.length > 0) {
+        const avgGlucose = glucoseReadings
+          .reduce((sum, r) => sum + Number(r.value), 0) / glucoseReadings.length;
+
+        // Simple prediction logic (in real app, this would be from ML model)
+        const prediction = Math.round(avgGlucose * 0.98 + Math.random() * 10 - 5);
+        setPredictedGlucose(prediction);
+      }
       setPredictionLoading(false);
     }, 2000);
   };
 
+  // Calculate statistics from real data
   const latestReading = glucoseReadings[0];
-  const avgFasting = glucoseReadings
-    .filter(r => r.fastingGlucose)
-    .reduce((sum, r) => sum + (r.fastingGlucose || 0), 0) / glucoseReadings.filter(r => r.fastingGlucose).length;
-  const avgPostMeal = glucoseReadings
-    .filter(r => r.postMealGlucose)
-    .reduce((sum, r) => sum + (r.postMealGlucose || 0), 0) / glucoseReadings.filter(r => r.postMealGlucose).length;
+  const avgGlucose = glucoseReadings.length > 0
+    ? glucoseReadings.reduce((sum, r) => sum + Number(r.value), 0) / glucoseReadings.length
+    : 0;
+
+  const thisWeekReadings = glucoseReadings.filter(r => {
+    const readingDate = new Date(r.date);
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    return readingDate >= weekAgo;
+  });
 
   return (
     <div className="space-y-6">
@@ -82,10 +99,30 @@ export const GlucoseTracker: React.FC = () => {
           onClick={() => setIsAddModalOpen(true)}
           icon={Plus}
           className="shadow-lg"
+          disabled={isLoading}
         >
           Add Reading
         </Button>
       </div>
+
+      {/* Success/Error Messages */}
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <CheckCircle className="h-5 w-5 mr-2" />
+            <span>{success}</span>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -93,10 +130,17 @@ export const GlucoseTracker: React.FC = () => {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">Latest Fasting</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {latestReading?.fastingGlucose || '--'} mg/dL
-                </p>
+                <p className="text-sm text-gray-600">Latest Reading</p>
+                {isLoading ? (
+                  <div className="flex items-center">
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    <span className="text-gray-400">Loading...</span>
+                  </div>
+                ) : (
+                  <p className="text-2xl font-bold text-blue-600">
+                    {latestReading?.value || '--'} {latestReading?.unit || 'mg/dL'}
+                  </p>
+                )}
               </div>
               <Activity className="h-8 w-8 text-blue-500" />
             </div>
@@ -104,6 +148,32 @@ export const GlucoseTracker: React.FC = () => {
         </Card>
 
         <Card className="border-l-4 border-l-green-500">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Average</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {avgGlucose ? Math.round(avgGlucose) : '--'} mg/dL
+                </p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-green-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-yellow-500">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">This Week</p>
+                <p className="text-2xl font-bold text-yellow-600">{thisWeekReadings.length}</p>
+              </div>
+              <Calendar className="h-8 w-8 text-yellow-500" />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-l-4 border-l-purple-500">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -211,33 +281,50 @@ export const GlucoseTracker: React.FC = () => {
                     Date
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Fasting Glucose
+                    Glucose Level
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Post-Meal Glucose
+                    Type
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Notes
+                    Time
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {glucoseReadings.slice(0, 10).map((reading) => (
-                  <tr key={reading.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {new Date(reading.date).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {reading.fastingGlucose ? `${reading.fastingGlucose} mg/dL` : '--'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {reading.postMealGlucose ? `${reading.postMealGlucose} mg/dL` : '--'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {reading.notes || '--'}
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-4 text-center">
+                      <Loader2 className="h-6 w-6 animate-spin mx-auto text-blue-600" />
+                      <p className="text-gray-500 mt-2">Loading readings...</p>
                     </td>
                   </tr>
-                ))}
+                ) : glucoseReadings.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                      No glucose readings yet. Add your first reading to get started.
+                    </td>
+                  </tr>
+                ) : (
+                  glucoseReadings.slice(0, 10).map((reading) => (
+                    <tr key={reading.id} className="hover:bg-gray-50">
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {new Date(reading.date).toLocaleDateString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {reading.value} {reading.unit}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {glucoseForm.type}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {new Date(reading.createdAt).toLocaleTimeString()}
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -253,45 +340,34 @@ export const GlucoseTracker: React.FC = () => {
       >
         <div className="space-y-4">
           <div>
-            <label htmlFor="reading-date" className="block text-sm font-medium text-gray-700">
-              Date *
+            <label htmlFor="glucose-value" className="block text-sm font-medium text-gray-700">
+              Glucose Reading (mg/dL) *
             </label>
             <input
-              type="date"
-              id="reading-date"
-              value={glucoseForm.date}
-              onChange={(e) => setGlucoseForm({ ...glucoseForm, date: e.target.value })}
+              type="number"
+              id="glucose-value"
+              value={glucoseForm.value}
+              onChange={(e) => setGlucoseForm({ ...glucoseForm, value: e.target.value })}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder="e.g., 95"
+              required
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label htmlFor="fasting-glucose" className="block text-sm font-medium text-gray-700">
-                Fasting Glucose (mg/dL)
-              </label>
-              <input
-                type="number"
-                id="fasting-glucose"
-                value={glucoseForm.fastingGlucose}
-                onChange={(e) => setGlucoseForm({ ...glucoseForm, fastingGlucose: e.target.value })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                placeholder="e.g., 95"
-              />
-            </div>
-            <div>
-              <label htmlFor="post-meal-glucose" className="block text-sm font-medium text-gray-700">
-                Post-Meal Glucose (mg/dL)
-              </label>
-              <input
-                type="number"
-                id="post-meal-glucose"
-                value={glucoseForm.postMealGlucose}
-                onChange={(e) => setGlucoseForm({ ...glucoseForm, postMealGlucose: e.target.value })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                placeholder="e.g., 140"
-              />
-            </div>
+          <div>
+            <label htmlFor="glucose-type" className="block text-sm font-medium text-gray-700">
+              Reading Type
+            </label>
+            <select
+              id="glucose-type"
+              value={glucoseForm.type}
+              onChange={(e) => setGlucoseForm({ ...glucoseForm, type: e.target.value as any })}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+            >
+              <option value="fasting">Fasting</option>
+              <option value="post_meal">Post-meal</option>
+              <option value="random">Random</option>
+            </select>
           </div>
 
           <div>
@@ -309,10 +385,26 @@ export const GlucoseTracker: React.FC = () => {
           </div>
 
           <div className="flex justify-end space-x-3">
-            <Button variant="outline" onClick={() => setIsAddModalOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsAddModalOpen(false)}
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
-            <Button onClick={handleAddReading}>Add Reading</Button>
+            <Button
+              onClick={handleAddReading}
+              disabled={isSubmitting || !glucoseForm.value}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Adding...
+                </>
+              ) : (
+                'Add Reading'
+              )}
+            </Button>
           </div>
         </div>
       </Modal>

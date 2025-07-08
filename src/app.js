@@ -16,10 +16,10 @@ app.use(express.json());
 app.use(cors());
 app.use(morgan('dev'));
 
-// Rate Limiting
+// Rate Limiting (increased for development)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 1000, // limit each IP to 1000 requests per windowMs (increased for development)
 });
 app.use(limiter);
 
@@ -49,7 +49,7 @@ app.use((err, req, res, next) => {
 });
 
 if (require.main === module) {
-  const PORT = process.env.PORT || 5000;
+  const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });

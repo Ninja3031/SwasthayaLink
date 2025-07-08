@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader } from '../components/UI/Card';
 import { Button } from '../components/UI/Button';
 import { Modal } from '../components/UI/Modal';
@@ -12,19 +12,86 @@ import {
   Shield,
   Settings,
   Camera,
+  Loader2,
+  AlertCircle,
+  CheckCircle,
 } from 'lucide-react';
-import { mockCurrentUser } from '../data/mockData';
-import { User as UserType } from '../types';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useAuth } from '../hooks/useAuth';
+import { authService } from '../services';
 
 export const Profile: React.FC = () => {
-const [user, setUser] = useLocalStorage<UserType>('user', mockCurrentUser);
+  const { user, updateUser, isLoading: authLoading } = useAuth();
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [editForm, setEditForm] = useState(user);
+  const [isAbhaModalOpen, setIsAbhaModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [editForm, setEditForm] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    dateOfBirth: user?.dateOfBirth || '',
+    gender: user?.gender || '',
+    bloodGroup: user?.bloodGroup || '',
+    emergencyContact: user?.emergencyContact || '',
+    photo: user?.photo || '',
+  });
+  const [abhaForm, setAbhaForm] = useState({
+    abhaId: user?.abhaId || '',
+  });
 
-  const handleSaveProfile = () => {
-    setUser(editForm);
-    setIsEditModalOpen(false);
+  useEffect(() => {
+    if (user) {
+      setEditForm({
+        name: user.name || '',
+        email: user.email || '',
+        phone: user.phone || '',
+        dateOfBirth: user.dateOfBirth || '',
+        gender: user.gender || '',
+        bloodGroup: user.bloodGroup || '',
+        emergencyContact: user.emergencyContact || '',
+        photo: user.photo || '',
+      });
+      setAbhaForm({
+        abhaId: user.abhaId || '',
+      });
+    }
+  }, [user]);
+
+  const handleSaveProfile = async () => {
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const updatedUser = await authService.updateProfile(editForm);
+      updateUser(updatedUser);
+      setSuccess('Profile updated successfully!');
+      setIsEditModalOpen(false);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to update profile');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleLinkAbha = async () => {
+    if (!abhaForm.abhaId) return;
+
+    setIsLoading(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const updatedUser = await authService.linkAbhaId(abhaForm.abhaId);
+      updateUser(updatedUser);
+      setSuccess('ABHA ID linked successfully!');
+      setIsAbhaModalOpen(false);
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to link ABHA ID');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -39,6 +106,28 @@ const [user, setUser] = useLocalStorage<UserType>('user', mockCurrentUser);
     }
   };
 
+  // Show loading spinner while auth is loading
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  // Show error if user is not found after loading
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center min-h-64">
+        <div className="text-center">
+          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">User not found</h2>
+          <p className="text-gray-600">Please try logging in again.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -47,14 +136,44 @@ const [user, setUser] = useLocalStorage<UserType>('user', mockCurrentUser);
           <h1 className="text-2xl font-bold text-gray-900">Profile</h1>
           <p className="text-gray-600">Manage your personal information and settings</p>
         </div>
-        <Button
-          onClick={() => setIsEditModalOpen(true)}
-          icon={Edit}
-          className="shadow-lg"
-        >
-          Edit Profile
-        </Button>
+        <div className="flex space-x-3">
+          {!user?.abhaId && (
+            <Button
+              onClick={() => setIsAbhaModalOpen(true)}
+              variant="outline"
+              icon={CreditCard}
+            >
+              Link ABHA ID
+            </Button>
+          )}
+          <Button
+            onClick={() => setIsEditModalOpen(true)}
+            icon={Edit}
+            className="shadow-lg"
+          >
+            Edit Profile
+          </Button>
+        </div>
       </div>
+
+      {/* Success/Error Messages */}
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <CheckCircle className="h-5 w-5 mr-2" />
+            <span>{success}</span>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
 
       {/* Profile Card */}
       <Card>
@@ -62,32 +181,23 @@ const [user, setUser] = useLocalStorage<UserType>('user', mockCurrentUser);
           <div className="flex items-center space-x-6">
             <div className="relative">
               <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center">
-                {user.photo ? (
-                  <img
-                    src={user.photo}
-                    alt={user.name}
-                    className="w-24 h-24 rounded-full object-cover"
-                  />
-                ) : (
-                  <User className="h-12 w-12 text-blue-600" />
-                )}
-              </div>
-              <div className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer">
-                <Camera className="h-4 w-4 text-white" />
+                <User className="h-12 w-12 text-blue-600" />
               </div>
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-gray-900">{user.name}</h2>
-              <p className="text-gray-600">{user.email}</p>
+              <h2 className="text-2xl font-bold text-gray-900">{user?.name || 'User'}</h2>
+              <p className="text-gray-600">{user?.email}</p>
               <div className="flex items-center mt-2 space-x-4">
                 <div className="flex items-center text-sm text-gray-600">
                   <CreditCard className="h-4 w-4 mr-1" />
-                  ABHA ID: {user.abhaId}
+                  ABHA ID: {user?.abhaId || 'Not linked'}
                 </div>
-                <div className="flex items-center text-sm text-gray-600">
-                  <Shield className="h-4 w-4 mr-1" />
-                  Verified
-                </div>
+                {user?.abhaId && (
+                  <div className="flex items-center text-sm text-green-600">
+                    <Shield className="h-4 w-4 mr-1" />
+                    Verified
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -105,20 +215,20 @@ const [user, setUser] = useLocalStorage<UserType>('user', mockCurrentUser);
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">Full Name</label>
-                <p className="mt-1 text-sm text-gray-900">{user.name}</p>
+                <p className="mt-1 text-sm text-gray-900">{user?.name || 'Not provided'}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Email</label>
                 <div className="mt-1 flex items-center">
                   <Mail className="h-4 w-4 text-gray-400 mr-2" />
-                  <p className="text-sm text-gray-900">{user.email}</p>
+                  <p className="text-sm text-gray-900">{user?.email || 'Not provided'}</p>
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Phone</label>
                 <div className="mt-1 flex items-center">
                   <Phone className="h-4 w-4 text-gray-400 mr-2" />
-                  <p className="text-sm text-gray-900">{user.phone}</p>
+                  <p className="text-sm text-gray-900">{user?.phone || 'Not provided'}</p>
                 </div>
               </div>
               <div>
@@ -126,13 +236,13 @@ const [user, setUser] = useLocalStorage<UserType>('user', mockCurrentUser);
                 <div className="mt-1 flex items-center">
                   <Calendar className="h-4 w-4 text-gray-400 mr-2" />
                   <p className="text-sm text-gray-900">
-                    {user.dateOfBirth ? new Date(user.dateOfBirth).toLocaleDateString() : 'Not provided'}
+                    {user?.dateOfBirth ? new Date(user.dateOfBirth).toLocaleDateString() : 'Not provided'}
                   </p>
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Gender</label>
-                <p className="mt-1 text-sm text-gray-900 capitalize">{user.gender || 'Not specified'}</p>
+                <p className="mt-1 text-sm text-gray-900 capitalize">{user?.gender || 'Not specified'}</p>
               </div>
             </div>
           </CardContent>
@@ -147,17 +257,17 @@ const [user, setUser] = useLocalStorage<UserType>('user', mockCurrentUser);
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700">ABHA ID</label>
-                <p className="mt-1 text-sm text-gray-900 font-mono">{user.abhaId}</p>
+                <p className="mt-1 text-sm text-gray-900 font-mono">{user?.abhaId || 'Not linked'}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Blood Group</label>
-                <p className="mt-1 text-sm text-gray-900">{user.bloodGroup || 'Not provided'}</p>
+                <p className="mt-1 text-sm text-gray-900">{user?.bloodGroup || 'Not provided'}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Emergency Contact</label>
                 <div className="mt-1 flex items-center">
                   <Phone className="h-4 w-4 text-gray-400 mr-2" />
-                  <p className="text-sm text-gray-900">{user.emergencyContact || 'Not provided'}</p>
+                  <p className="text-sm text-gray-900">{user?.emergencyContact || 'Not provided'}</p>
                 </div>
               </div>
             </div>
@@ -329,10 +439,80 @@ const [user, setUser] = useLocalStorage<UserType>('user', mockCurrentUser);
           </div>
 
           <div className="flex justify-end space-x-3">
-            <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditModalOpen(false)}
+              disabled={isLoading}
+            >
               Cancel
             </Button>
-            <Button onClick={handleSaveProfile}>Save Changes</Button>
+            <Button
+              onClick={handleSaveProfile}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ABHA ID Link Modal */}
+      <Modal
+        isOpen={isAbhaModalOpen}
+        onClose={() => setIsAbhaModalOpen(false)}
+        title="Link ABHA ID"
+      >
+        <div className="space-y-4">
+          <p className="text-gray-600">
+            Link your ABHA (Ayushman Bharat Health Account) ID to enable seamless health data sharing across healthcare providers.
+          </p>
+
+          <div>
+            <label htmlFor="abhaId" className="block text-sm font-medium text-gray-700">
+              ABHA ID *
+            </label>
+            <input
+              type="text"
+              id="abhaId"
+              value={abhaForm.abhaId}
+              onChange={(e) => setAbhaForm({ ...abhaForm, abhaId: e.target.value })}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              placeholder="e.g., 12-3456-7890-1234"
+              pattern="[0-9]{2}-[0-9]{4}-[0-9]{4}-[0-9]{4}"
+            />
+            <p className="mt-1 text-xs text-gray-500">
+              Format: XX-XXXX-XXXX-XXXX
+            </p>
+          </div>
+
+          <div className="flex justify-end space-x-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsAbhaModalOpen(false)}
+              disabled={isLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleLinkAbha}
+              disabled={isLoading || !abhaForm.abhaId}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Linking...
+                </>
+              ) : (
+                'Link ABHA ID'
+              )}
+            </Button>
           </div>
         </div>
       </Modal>

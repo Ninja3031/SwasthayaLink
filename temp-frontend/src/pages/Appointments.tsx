@@ -12,21 +12,33 @@ import {
   Trash2,
   CheckCircle,
   XCircle,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
-import { mockAppointments } from '../data/mockData';
-import { Appointment } from '../types';
-import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useAppointments, type Appointment, type AppointmentForm } from '../hooks/useAppointments';
 
 export const Appointments: React.FC = () => {
-  const [appointments, setAppointments] = useLocalStorage<Appointment[]>('appointments', mockAppointments);
+  const {
+    appointments,
+    isLoading,
+    error,
+    bookAppointment,
+    updateAppointment,
+    cancelAppointment,
+    getUpcomingAppointments,
+    getAppointmentsByStatus
+  } = useAppointments();
+
   const [isBookModalOpen, setIsBookModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
-  const [appointmentForm, setAppointmentForm] = useState({
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [success, setSuccess] = useState('');
+  const [appointmentForm, setAppointmentForm] = useState<AppointmentForm>({
     doctorName: '',
     date: '',
     time: '',
-    type: 'consultation' as Appointment['type'],
+    type: 'consultation',
     hospital: '',
     specialty: '',
     notes: '',
@@ -44,82 +56,75 @@ export const Appointments: React.FC = () => {
     });
   };
 
-  const handleBookAppointment = () => {
-    if (appointmentForm.doctorName && appointmentForm.date && appointmentForm.time) {
-      const newAppointment: Appointment = {
-        id: Date.now().toString(),
-        doctorName: appointmentForm.doctorName,
-        date: appointmentForm.date,
-        time: appointmentForm.time,
-        type: appointmentForm.type,
-        status: 'scheduled',
-        hospital: appointmentForm.hospital,
-        specialty: appointmentForm.specialty,
-        notes: appointmentForm.notes,
-      };
-      setAppointments([...appointments, newAppointment]);
+  const handleBookAppointment = async () => {
+    if (!appointmentForm.doctorName || !appointmentForm.date || !appointmentForm.time) return;
+
+    setIsSubmitting(true);
+    setSuccess('');
+
+    try {
+      await bookAppointment(appointmentForm);
+      setSuccess('Appointment booked successfully!');
       setIsBookModalOpen(false);
       resetForm();
+    } catch (err) {
+      console.error('Failed to book appointment:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleEditAppointment = () => {
-    if (selectedAppointment) {
-      const updatedAppointments = appointments.map(apt =>
-        apt.id === selectedAppointment.id
-          ? {
-              ...apt,
-              doctorName: appointmentForm.doctorName,
-              date: appointmentForm.date,
-              time: appointmentForm.time,
-              type: appointmentForm.type,
-              hospital: appointmentForm.hospital,
-              specialty: appointmentForm.specialty,
-              notes: appointmentForm.notes,
-            }
-          : apt
-      );
-      setAppointments(updatedAppointments);
+  const handleCancelAppointment = async (id: string) => {
+    if (!confirm('Are you sure you want to cancel this appointment?')) return;
+
+    try {
+      await cancelAppointment(id);
+      setSuccess('Appointment cancelled successfully!');
+    } catch (err) {
+      console.error('Failed to cancel appointment:', err);
+    }
+  };
+
+  // Get filtered appointments
+  const upcomingAppointments = getUpcomingAppointments();
+  const scheduledAppointments = getAppointmentsByStatus('scheduled');
+  const completedAppointments = getAppointmentsByStatus('completed');
+  const cancelledAppointments = getAppointmentsByStatus('cancelled');
+
+  const handleEditAppointment = async () => {
+    if (!selectedAppointment) return;
+
+    setIsSubmitting(true);
+    setSuccess('');
+
+    try {
+      await updateAppointment(selectedAppointment.id, appointmentForm);
+      setSuccess('Appointment updated successfully!');
       setIsEditModalOpen(false);
       setSelectedAppointment(null);
       resetForm();
+    } catch (err) {
+      console.error('Failed to update appointment:', err);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handleDeleteAppointment = (id: string) => {
-    setAppointments(appointments.filter(apt => apt.id !== id));
-  };
-
-  const handleCancelAppointment = (id: string) => {
-    const updatedAppointments = appointments.map(apt =>
-      apt.id === id ? { ...apt, status: 'cancelled' as const } : apt
-    );
-    setAppointments(updatedAppointments);
-  };
-
-  const openEditModal = (appointment: Appointment) => {
+  const handleEditClick = (appointment: Appointment) => {
     setSelectedAppointment(appointment);
     setAppointmentForm({
       doctorName: appointment.doctorName,
       date: appointment.date,
       time: appointment.time,
       type: appointment.type,
-      hospital: appointment.hospital || '',
-      specialty: appointment.specialty || '',
+      hospital: appointment.hospital,
+      specialty: appointment.specialty,
       notes: appointment.notes || '',
     });
     setIsEditModalOpen(true);
   };
 
-  const upcomingAppointments = appointments.filter(
-    apt => apt.status === 'scheduled' && new Date(apt.date) >= new Date()
-  );
 
-  const pastAppointments = appointments.filter(
-    apt => apt.status === 'completed' || new Date(apt.date) < new Date()
-  );
-
-  const cancelledAppointments = appointments.filter(apt => apt.status === 'cancelled');
 
   const getStatusColor = (status: Appointment['status']) => {
     switch (status) {
@@ -138,11 +143,11 @@ export const Appointments: React.FC = () => {
     switch (type) {
       case 'consultation':
         return 'bg-purple-100 text-purple-800';
-      case 'follow-up':
+      case 'follow_up':
         return 'bg-blue-100 text-blue-800';
       case 'emergency':
         return 'bg-red-100 text-red-800';
-      case 'routine':
+      case 'checkup':
         return 'bg-green-100 text-green-800';
       default:
         return 'bg-gray-100 text-gray-800';
@@ -161,10 +166,30 @@ export const Appointments: React.FC = () => {
           onClick={() => setIsBookModalOpen(true)}
           icon={Plus}
           className="shadow-lg"
+          disabled={isLoading}
         >
           Book Appointment
         </Button>
       </div>
+
+      {/* Success/Error Messages */}
+      {success && (
+        <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <CheckCircle className="h-5 w-5 mr-2" />
+            <span>{success}</span>
+          </div>
+        </div>
+      )}
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+          <div className="flex items-center">
+            <AlertCircle className="h-5 w-5 mr-2" />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
 
       {/* Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -185,7 +210,7 @@ export const Appointments: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Completed</p>
-                <p className="text-2xl font-bold text-green-600">{pastAppointments.length}</p>
+                <p className="text-2xl font-bold text-green-600">{completedAppointments.length}</p>
               </div>
               <CheckCircle className="h-8 w-8 text-green-500" />
             </div>
@@ -262,8 +287,10 @@ export const Appointments: React.FC = () => {
                         size="sm"
                         variant="outline"
                         icon={Edit}
-                        onClick={() => openEditModal(appointment)}
-                      />
+                        onClick={() => handleEditClick(appointment)}
+                      >
+                        Edit
+                      </Button>
                       <Button
                         size="sm"
                         variant="outline"
@@ -275,8 +302,10 @@ export const Appointments: React.FC = () => {
                         size="sm"
                         variant="ghost"
                         icon={Trash2}
-                        onClick={() => handleDeleteAppointment(appointment.id)}
-                      />
+                        onClick={() => handleCancelAppointment(appointment.id)}
+                      >
+                        Delete
+                      </Button>
                     </div>
                   </div>
                 </div>
@@ -298,7 +327,7 @@ export const Appointments: React.FC = () => {
       <div>
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Past Appointments</h2>
         <div className="space-y-4">
-          {pastAppointments.slice(0, 5).map((appointment) => (
+          {completedAppointments.slice(0, 5).map((appointment: Appointment) => (
             <Card key={appointment.id} className="opacity-75">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between">
@@ -333,7 +362,7 @@ export const Appointments: React.FC = () => {
               </CardContent>
             </Card>
           ))}
-          {pastAppointments.length === 0 && (
+          {completedAppointments.length === 0 && (
             <Card>
               <CardContent className="p-6 text-center text-gray-500">
                 <CheckCircle className="h-12 w-12 mx-auto mb-4 text-gray-400" />
@@ -404,8 +433,8 @@ export const Appointments: React.FC = () => {
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
             >
               <option value="consultation">Consultation</option>
-              <option value="follow-up">Follow-up</option>
-              <option value="routine">Routine Checkup</option>
+              <option value="follow_up">Follow-up</option>
+              <option value="checkup">Routine Checkup</option>
               <option value="emergency">Emergency</option>
             </select>
           </div>
@@ -454,10 +483,19 @@ export const Appointments: React.FC = () => {
           </div>
 
           <div className="flex justify-end space-x-3">
-            <Button variant="outline" onClick={() => setIsBookModalOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsBookModalOpen(false)}
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
-            <Button onClick={handleBookAppointment}>Book Appointment</Button>
+            <Button
+              onClick={handleBookAppointment}
+              disabled={isSubmitting || !appointmentForm.doctorName || !appointmentForm.date || !appointmentForm.time}
+            >
+              {isSubmitting ? 'Booking...' : 'Book Appointment'}
+            </Button>
           </div>
         </div>
       </Modal>
@@ -522,8 +560,8 @@ export const Appointments: React.FC = () => {
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
             >
               <option value="consultation">Consultation</option>
-              <option value="follow-up">Follow-up</option>
-              <option value="routine">Routine Checkup</option>
+              <option value="follow_up">Follow-up</option>
+              <option value="checkup">Routine Checkup</option>
               <option value="emergency">Emergency</option>
             </select>
           </div>
@@ -572,10 +610,19 @@ export const Appointments: React.FC = () => {
           </div>
 
           <div className="flex justify-end space-x-3">
-            <Button variant="outline" onClick={() => setIsEditModalOpen(false)}>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditModalOpen(false)}
+              disabled={isSubmitting}
+            >
               Cancel
             </Button>
-            <Button onClick={handleEditAppointment}>Update Appointment</Button>
+            <Button
+              onClick={handleEditAppointment}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Updating...' : 'Update Appointment'}
+            </Button>
           </div>
         </div>
       </Modal>

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Search, Bell, User, Menu, Settings, LogOut } from 'lucide-react';
-import { mockCurrentUser } from '../../data/mockData';
+import { useAuth } from '../../hooks/useAuth';
+import { useNotifications } from '../../hooks/useNotifications';
 
 interface TopNavProps {
   onMenuToggle: () => void;
@@ -12,6 +13,8 @@ export const TopNav: React.FC<TopNavProps> = ({ onMenuToggle, isSidebarCollapsed
   const [searchQuery, setSearchQuery] = useState('');
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
+  const { unreadCount } = useNotifications();
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,10 +29,13 @@ export const TopNav: React.FC<TopNavProps> = ({ onMenuToggle, isSidebarCollapsed
     setIsProfileMenuOpen(false);
   };
 
-  const handleLogout = () => {
-    // Implement logout functionality
-    console.log('Logging out...');
-    setIsProfileMenuOpen(false);
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setIsProfileMenuOpen(false);
+    } catch (error) {
+      console.error('Logout failed:', error);
+    }
   };
 
   return (
@@ -67,9 +73,11 @@ export const TopNav: React.FC<TopNavProps> = ({ onMenuToggle, isSidebarCollapsed
             className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors"
           >
             <Bell className="h-5 w-5 text-gray-600" />
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-              3
-            </span>
+            {unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
           </Link>
 
           {/* Profile Dropdown */}
@@ -82,9 +90,8 @@ export const TopNav: React.FC<TopNavProps> = ({ onMenuToggle, isSidebarCollapsed
                 <User className="h-5 w-5 text-white" />
               </div>
               <div className="hidden md:block text-left">
-            <p className="text-sm font-medium text-gray-900">{mockCurrentUser.name}</p>
-<p className="text-xs text-gray-500">{mockCurrentUser.abhaId}</p>
-
+                <p className="text-sm font-medium text-gray-900">{user?.name || 'User'}</p>
+                <p className="text-xs text-gray-500">{user?.abhaId || user?.email}</p>
               </div>
             </button>
 
