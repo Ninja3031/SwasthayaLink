@@ -1,18 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './useAuth';
+import { appointmentService } from '../services/appointmentService';
 
 export interface Appointment {
   id: string;
   doctorName: string;
+  doctorId?: string;
+  patientName: string;
   date: string;
   time: string;
-  type: 'consultation' | 'follow_up' | 'checkup' | 'emergency';
-  hospital: string;
-  specialty: string;
-  status: 'scheduled' | 'completed' | 'cancelled' | 'rescheduled';
+  type: 'consultation' | 'follow-up' | 'routine' | 'emergency';
+  status: 'scheduled' | 'confirmed' | 'completed' | 'cancelled';
+  hospital?: string;
+  specialty?: string;
+  consultationFee?: number;
+  estimatedDuration?: number;
+  symptoms?: string;
+  diagnosis?: string;
+  prescription?: string;
   notes?: string;
-  createdAt: string;
-  updatedAt: string;
 }
 
 export interface AppointmentForm {
@@ -31,51 +37,17 @@ export const useAppointments = () => {
   const [error, setError] = useState<string | null>(null);
   const { isAuthenticated } = useAuth();
 
-  // Mock data for demonstration - replace with real API calls
-  const mockAppointments: Appointment[] = [
-    {
-      id: '1',
-      doctorName: 'Dr. Sarah Johnson',
-      date: '2024-01-15',
-      time: '10:00',
-      type: 'consultation',
-      hospital: 'City General Hospital',
-      specialty: 'Cardiology',
-      status: 'scheduled',
-      notes: 'Regular checkup',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-    {
-      id: '2',
-      doctorName: 'Dr. Michael Chen',
-      date: '2024-01-20',
-      time: '14:30',
-      type: 'follow_up',
-      hospital: 'Metro Medical Center',
-      specialty: 'Endocrinology',
-      status: 'scheduled',
-      notes: 'Diabetes follow-up',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    },
-  ];
+
 
   // Fetch appointments
   const fetchAppointments = useCallback(async () => {
     if (!isAuthenticated) return;
-    
+
     try {
       setIsLoading(true);
       setError(null);
-      
-      // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Get from localStorage or use mock data
-      const stored = localStorage.getItem('appointments');
-      const appointmentsData = stored ? JSON.parse(stored) : mockAppointments;
-      
+
+      const appointmentsData = await appointmentService.getAppointments();
       setAppointments(appointmentsData);
     } catch (err: any) {
       setError(err.message || 'Failed to fetch appointments');
@@ -87,52 +59,33 @@ export const useAppointments = () => {
   // Book new appointment
   const bookAppointment = useCallback(async (appointmentData: AppointmentForm): Promise<Appointment> => {
     try {
-      const newAppointment: Appointment = {
-        id: Date.now().toString(),
+      const newAppointment = await appointmentService.addAppointment({
         ...appointmentData,
+        patientName: 'Current User', // This should come from user context
         status: 'scheduled',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      });
 
-      // TODO: Replace with real API call
-      // const response = await api.post('/appointments', appointmentData);
-      
-      const updatedAppointments = [newAppointment, ...appointments];
-      setAppointments(updatedAppointments);
-      localStorage.setItem('appointments', JSON.stringify(updatedAppointments));
-      
+      setAppointments(prev => [newAppointment, ...prev]);
       return newAppointment;
     } catch (err: any) {
       const errorMessage = err.response?.data?.error || 'Failed to book appointment';
       setError(errorMessage);
       throw new Error(errorMessage);
     }
-  }, [appointments]);
+  }, []);
 
   // Update appointment
   const updateAppointment = useCallback(async (id: string, updates: Partial<Appointment>): Promise<Appointment> => {
     try {
-      // TODO: Replace with real API call
-      // const response = await api.put(`/appointments/${id}`, updates);
-      
-      const updatedAppointments = appointments.map(apt => 
-        apt.id === id 
-          ? { ...apt, ...updates, updatedAt: new Date().toISOString() }
-          : apt
-      );
-      
-      setAppointments(updatedAppointments);
-      localStorage.setItem('appointments', JSON.stringify(updatedAppointments));
-      
-      const updatedAppointment = updatedAppointments.find(apt => apt.id === id)!;
+      const updatedAppointment = await appointmentService.updateAppointment(id, updates);
+      setAppointments(prev => prev.map(apt => apt.id === id ? updatedAppointment : apt));
       return updatedAppointment;
     } catch (err: any) {
       const errorMessage = err.response?.data?.error || 'Failed to update appointment';
       setError(errorMessage);
       throw new Error(errorMessage);
     }
-  }, [appointments]);
+  }, []);
 
   // Cancel appointment
   const cancelAppointment = useCallback(async (id: string): Promise<void> => {
@@ -153,7 +106,7 @@ export const useAppointments = () => {
     const now = new Date();
     return appointments.filter(apt => {
       const appointmentDate = new Date(`${apt.date} ${apt.time}`);
-      return appointmentDate > now && apt.status === 'scheduled';
+      return appointmentDate > now && (apt.status === 'scheduled' || apt.status === 'confirmed');
     }).sort((a, b) => new Date(`${a.date} ${a.time}`).getTime() - new Date(`${b.date} ${b.time}`).getTime());
   }, [appointments]);
 

@@ -19,7 +19,8 @@ import {
 import { useHealthData } from '../hooks/useHealthData';
 import { useAuth } from '../hooks/useAuth';
 import { useNotifications } from '../hooks/useNotifications';
-import { mockAppointments, mockMedications } from '../data/mockData';
+import { useAppointments } from '../hooks/useAppointments';
+import { useMedications } from '../hooks/useMedications';
 
 export const Dashboard: React.FC = () => {
   const [isGlucoseModalOpen, setIsGlucoseModalOpen] = useState(false);
@@ -33,6 +34,8 @@ export const Dashboard: React.FC = () => {
   const { user } = useAuth();
   const { healthData, addHealthData, getHealthDataByType, getLatestReading, isLoading, error } = useHealthData();
   const { notifications } = useNotifications();
+  const { getUpcomingAppointments } = useAppointments();
+  const { medications } = useMedications();
 
   // Get health data by type
   const glucoseReadings = getHealthDataByType('glucose');
@@ -46,16 +49,13 @@ export const Dashboard: React.FC = () => {
   const latestWeightReading = getLatestReading('weight');
   const latestHeartRateReading = getLatestReading('heart_rate');
 
-  // Mock data for appointments and medications (until those APIs are implemented)
-  const upcomingAppointments = mockAppointments.filter(
-    (apt) => apt.status === 'scheduled' && new Date(apt.date) > new Date()
-  );
-
-  const todayMedications = mockMedications.filter((med) => {
+  // Get real data from hooks
+  const upcomingAppointments = getUpcomingAppointments().slice(0, 3);
+  const todayMedications = medications.filter((med) => {
     const today = new Date();
     const startDate = new Date(med.startDate);
     const endDate = new Date(med.endDate);
-    return today >= startDate && today <= endDate;
+    return today >= startDate && today <= endDate && med.isActive;
   });
 
   // Calculate predicted glucose (simple prediction based on latest reading)
