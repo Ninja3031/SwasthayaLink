@@ -8,6 +8,8 @@ const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/user');
 const reportRoutes = require('./routes/report');
 const healthDataRoutes = require('./routes/healthData');
+const medicationRoutes = require('./routes/medication');
+const appointmentRoutes = require('./routes/appointment');
 
 const app = express();
 
@@ -36,6 +38,8 @@ app.use('/auth', authRoutes);
 app.use('/user', userRoutes);
 app.use('/reports', reportRoutes);
 app.use('/healthdata', healthDataRoutes);
+app.use('/medications', medicationRoutes);
+app.use('/appointments', appointmentRoutes);
 
 // Routes placeholder
 app.get('/', (req, res) => {
