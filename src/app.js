@@ -64,9 +64,24 @@ app.use('/doctor', doctorRoutes);
 app.use('/patients', patientRoutes);
 app.use('/glucose-targets', glucoseTargetRoutes);
 
-// Routes placeholder
+// Health check endpoint
 app.get('/', (req, res) => {
-  res.send('SwasthiyaLink API is running');
+  res.json({
+    message: 'SwasthiyaLink API is running',
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Health check for monitoring
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+  });
 });
 
 // Error handling middleware
