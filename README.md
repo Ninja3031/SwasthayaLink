@@ -87,6 +87,8 @@ SwasthayaLink is a smart healthcare dashboard and consultation platform designed
 
 **See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment instructions**
 
+backend deployment link = https://swasthayalink-backend.onrender.com
+
 
 
 
