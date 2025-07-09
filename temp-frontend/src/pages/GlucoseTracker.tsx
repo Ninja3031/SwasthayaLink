@@ -12,12 +12,30 @@ import {
   Loader2,
   AlertCircle,
   CheckCircle,
+  Settings,
+  Bell,
+  Clock,
 } from 'lucide-react';
 import { useHealthData } from '../hooks/useHealthData';
+import { useGlucoseTargets } from '../hooks/useGlucoseTargets';
 
 export const GlucoseTracker: React.FC = () => {
   const { healthData, addHealthData, getHealthDataByType, isLoading, error } = useHealthData();
+  const {
+    targets,
+    analysis,
+    fetchAnalysis,
+    updateTargets,
+    updateReminderSettings,
+    isWithinTarget,
+    getTargetRange,
+    getStatusColor,
+    getStatusText
+  } = useGlucoseTargets();
+
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isPredictionLoading, setPredictionLoading] = useState(false);
   const [predictedGlucose, setPredictedGlucose] = useState<number | null>(null);
@@ -27,9 +45,52 @@ export const GlucoseTracker: React.FC = () => {
     type: 'fasting' as 'fasting' | 'post_meal' | 'random',
     notes: '',
   });
+  const [targetForm, setTargetForm] = useState({
+    fastingMin: 70,
+    fastingMax: 100,
+    postMealMin: 70,
+    postMealMax: 140,
+    randomMin: 70,
+    randomMax: 125,
+  });
+  const [reminderForm, setReminderForm] = useState({
+    reminderEnabled: true,
+    reminderTimes: [
+      { time: '08:00', type: 'fasting' as const, enabled: true },
+      { time: '14:00', type: 'post_meal' as const, enabled: true },
+      { time: '20:00', type: 'random' as const, enabled: true }
+    ],
+    reminderDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+  });
 
   // Get glucose readings from health data
   const glucoseReadings = getHealthDataByType('glucose');
+
+  // Initialize forms when targets are loaded
+  useEffect(() => {
+    if (targets) {
+      setTargetForm({
+        fastingMin: targets.fastingMin,
+        fastingMax: targets.fastingMax,
+        postMealMin: targets.postMealMin,
+        postMealMax: targets.postMealMax,
+        randomMin: targets.randomMin,
+        randomMax: targets.randomMax,
+      });
+      setReminderForm({
+        reminderEnabled: targets.reminderEnabled,
+        reminderTimes: targets.reminderTimes,
+        reminderDays: targets.reminderDays
+      });
+    }
+  }, [targets]);
+
+  // Fetch analysis when component mounts
+  useEffect(() => {
+    if (targets) {
+      fetchAnalysis(30);
+    }
+  }, [targets, fetchAnalysis]);
 
   const handleAddReading = async () => {
     if (!glucoseForm.value) return;
@@ -74,6 +135,34 @@ export const GlucoseTracker: React.FC = () => {
     }, 2000);
   };
 
+  const handleUpdateTargets = async () => {
+    try {
+      setIsSubmitting(true);
+      await updateTargets(targetForm);
+      setSuccess('Glucose targets updated successfully!');
+      setIsTargetModalOpen(false);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error('Failed to update targets:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateReminders = async () => {
+    try {
+      setIsSubmitting(true);
+      await updateReminderSettings(reminderForm);
+      setSuccess('Reminder settings updated successfully!');
+      setIsReminderModalOpen(false);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error('Failed to update reminders:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // Calculate statistics from real data
   const latestReading = glucoseReadings[0];
   const avgGlucose = glucoseReadings.length > 0
@@ -95,14 +184,34 @@ export const GlucoseTracker: React.FC = () => {
           <h1 className="text-2xl font-bold text-gray-900">Glucose Tracker</h1>
           <p className="text-gray-600">Monitor your blood glucose levels and trends</p>
         </div>
-        <Button
-          onClick={() => setIsAddModalOpen(true)}
-          icon={Plus}
-          className="shadow-lg"
-          disabled={isLoading}
-        >
-          Add Reading
-        </Button>
+        <div className="flex items-center space-x-3">
+          <Button
+            onClick={() => setIsReminderModalOpen(true)}
+            icon={Bell}
+            variant="outline"
+            size="sm"
+            disabled={isLoading}
+          >
+            Reminders
+          </Button>
+          <Button
+            onClick={() => setIsTargetModalOpen(true)}
+            icon={Target}
+            variant="outline"
+            size="sm"
+            disabled={isLoading}
+          >
+            Set Targets
+          </Button>
+          <Button
+            onClick={() => setIsAddModalOpen(true)}
+            icon={Plus}
+            className="shadow-lg"
+            disabled={isLoading}
+          >
+            Add Reading
+          </Button>
+        </div>
       </div>
 
       {/* Success/Error Messages */}
@@ -403,6 +512,239 @@ export const GlucoseTracker: React.FC = () => {
                 </>
               ) : (
                 'Add Reading'
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Target Settings Modal */}
+      <Modal
+        isOpen={isTargetModalOpen}
+        onClose={() => setIsTargetModalOpen(false)}
+        title="Set Glucose Targets"
+        size="lg"
+      >
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Fasting Targets */}
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900">Fasting Glucose</h4>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm text-gray-600">Min (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.fastingMin}
+                    onChange={(e) => setTargetForm({...targetForm, fastingMin: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600">Max (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.fastingMax}
+                    onChange={(e) => setTargetForm({...targetForm, fastingMax: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Post-Meal Targets */}
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900">Post-Meal Glucose</h4>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-sm text-gray-600">Min (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.postMealMin}
+                    onChange={(e) => setTargetForm({...targetForm, postMealMin: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600">Max (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.postMealMax}
+                    onChange={(e) => setTargetForm({...targetForm, postMealMax: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Random Targets */}
+            <div className="space-y-3 md:col-span-2">
+              <h4 className="font-medium text-gray-900">Random Glucose</h4>
+              <div className="grid grid-cols-2 gap-2 max-w-md">
+                <div>
+                  <label className="block text-sm text-gray-600">Min (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.randomMin}
+                    onChange={(e) => setTargetForm({...targetForm, randomMin: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600">Max (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.randomMax}
+                    onChange={(e) => setTargetForm({...targetForm, randomMax: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => setIsTargetModalOpen(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateTargets}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                'Save Targets'
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reminder Settings Modal */}
+      <Modal
+        isOpen={isReminderModalOpen}
+        onClose={() => setIsReminderModalOpen(false)}
+        title="Glucose Reminder Settings"
+        size="lg"
+      >
+        <div className="space-y-6">
+          <div className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              id="reminder-enabled"
+              checked={reminderForm.reminderEnabled}
+              onChange={(e) => setReminderForm({...reminderForm, reminderEnabled: e.target.checked})}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="reminder-enabled" className="text-sm font-medium text-gray-900">
+              Enable glucose testing reminders
+            </label>
+          </div>
+
+          {reminderForm.reminderEnabled && (
+            <>
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3">Reminder Times</h4>
+                <div className="space-y-3">
+                  {reminderForm.reminderTimes.map((reminder, index) => (
+                    <div key={index} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                      <input
+                        type="checkbox"
+                        checked={reminder.enabled}
+                        onChange={(e) => {
+                          const newTimes = [...reminderForm.reminderTimes];
+                          newTimes[index].enabled = e.target.checked;
+                          setReminderForm({...reminderForm, reminderTimes: newTimes});
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <Clock className="h-4 w-4 text-gray-400" />
+                      <input
+                        type="time"
+                        value={reminder.time}
+                        onChange={(e) => {
+                          const newTimes = [...reminderForm.reminderTimes];
+                          newTimes[index].time = e.target.value;
+                          setReminderForm({...reminderForm, reminderTimes: newTimes});
+                        }}
+                        className="px-3 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                      />
+                      <select
+                        value={reminder.type}
+                        onChange={(e) => {
+                          const newTimes = [...reminderForm.reminderTimes];
+                          newTimes[index].type = e.target.value as any;
+                          setReminderForm({...reminderForm, reminderTimes: newTimes});
+                        }}
+                        className="px-3 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="fasting">Fasting</option>
+                        <option value="post_meal">Post-meal</option>
+                        <option value="random">Random</option>
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3">Reminder Days</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
+                    <label key={day} className="flex items-center space-x-2">
+                      <input
+                        type="checkbox"
+                        checked={reminderForm.reminderDays.includes(day)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setReminderForm({
+                              ...reminderForm,
+                              reminderDays: [...reminderForm.reminderDays, day]
+                            });
+                          } else {
+                            setReminderForm({
+                              ...reminderForm,
+                              reminderDays: reminderForm.reminderDays.filter(d => d !== day)
+                            });
+                          }
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700 capitalize">{day.slice(0, 3)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end space-x-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => setIsReminderModalOpen(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateReminders}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                'Save Reminders'
               )}
             </Button>
           </div>

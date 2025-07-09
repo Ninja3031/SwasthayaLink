@@ -20,6 +20,15 @@ router.put('/appointments/:id', doctorController.updateAppointment);
 router.get('/patients', doctorController.getPatients);
 router.get('/patients/:patientId', doctorController.getPatientDetails);
 
+// Analytics
+router.get('/analytics', doctorController.getAnalytics);
+
+// Time Slots
+router.get('/timeslots', doctorController.getTimeSlots);
+router.post('/timeslots', doctorController.createTimeSlot);
+router.put('/timeslots/:id', doctorController.updateTimeSlot);
+router.delete('/timeslots/:id', doctorController.deleteTimeSlot);
+
 // Profile
 router.put('/profile', doctorController.updateProfile);
 

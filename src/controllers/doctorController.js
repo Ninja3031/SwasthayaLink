@@ -3,6 +3,7 @@ const Appointment = require('../models/Appointment');
 const Medication = require('../models/Medication');
 const Patient = require('../models/Patient');
 const PatientRecord = require('../models/PatientRecord');
+const TimeSlot = require('../models/TimeSlot');
 
 // Get doctor dashboard data
 exports.getDashboard = async (req, res) => {
@@ -327,6 +328,367 @@ exports.updateProfile = async (req, res) => {
     res.json({ message: 'Profile updated successfully', doctor: updatedDoctor });
   } catch (err) {
     console.error('Update profile error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Get analytics data
+exports.getAnalytics = async (req, res) => {
+  try {
+    const doctorId = req.user.userId;
+    const { period = '6months' } = req.query;
+
+    // Calculate date range based on period
+    const now = new Date();
+    let startDate = new Date();
+
+    switch (period) {
+      case '1month':
+        startDate.setMonth(now.getMonth() - 1);
+        break;
+      case '3months':
+        startDate.setMonth(now.getMonth() - 3);
+        break;
+      case '6months':
+        startDate.setMonth(now.getMonth() - 6);
+        break;
+      case '1year':
+        startDate.setFullYear(now.getFullYear() - 1);
+        break;
+      default:
+        startDate.setMonth(now.getMonth() - 6);
+    }
+
+    // Get total patients assigned to this doctor
+    const totalPatients = await Patient.countDocuments({
+      assignedDoctors: doctorId
+    });
+
+    // Get new patients in the period
+    const newPatients = await Patient.countDocuments({
+      assignedDoctors: doctorId,
+      registrationDate: { $gte: startDate }
+    });
+
+    // Get appointments data
+    const totalAppointments = await Appointment.countDocuments({
+      doctorId: doctorId,
+      date: { $gte: startDate }
+    });
+
+    const completedAppointments = await Appointment.countDocuments({
+      doctorId: doctorId,
+      status: 'completed',
+      date: { $gte: startDate }
+    });
+
+    const cancelledAppointments = await Appointment.countDocuments({
+      doctorId: doctorId,
+      status: 'cancelled',
+      date: { $gte: startDate }
+    });
+
+    const scheduledAppointments = await Appointment.countDocuments({
+      doctorId: doctorId,
+      status: { $in: ['scheduled', 'confirmed'] },
+      date: { $gte: startDate }
+    });
+
+    // Calculate revenue (from completed appointments)
+    const revenueData = await Appointment.aggregate([
+      {
+        $match: {
+          doctorId: doctorId,
+          status: 'completed',
+          date: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$consultationFee' }
+        }
+      }
+    ]);
+
+    const totalRevenue = revenueData.length > 0 ? revenueData[0].totalRevenue : 0;
+
+    // Get monthly breakdown
+    const monthlyData = await Appointment.aggregate([
+      {
+        $match: {
+          doctorId: doctorId,
+          date: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$date' },
+            month: { $month: '$date' }
+          },
+          appointments: { $sum: 1 },
+          revenue: {
+            $sum: {
+              $cond: [
+                { $eq: ['$status', 'completed'] },
+                '$consultationFee',
+                0
+              ]
+            }
+          },
+          patients: { $addToSet: '$user' }
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          appointments: 1,
+          revenue: 1,
+          patients: { $size: { $ifNull: ['$patients', []] } }
+        }
+      },
+      {
+        $sort: { '_id.year': 1, '_id.month': 1 }
+      }
+    ]);
+
+    // Get appointment status breakdown
+    const appointmentStatusData = [
+      { name: 'Completed', value: completedAppointments, color: '#10B981' },
+      { name: 'Cancelled', value: cancelledAppointments, color: '#EF4444' },
+      { name: 'Scheduled', value: scheduledAppointments, color: '#3B82F6' }
+    ];
+
+    // Get popular time slots
+    const timeSlotData = await Appointment.aggregate([
+      {
+        $match: {
+          doctorId: doctorId,
+          date: { $gte: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: '$time',
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { count: -1 }
+      },
+      {
+        $limit: 10
+      }
+    ]);
+
+    res.json({
+      summary: {
+        totalPatients,
+        newPatients,
+        totalAppointments,
+        completedAppointments,
+        cancelledAppointments,
+        scheduledAppointments,
+        totalRevenue,
+        averageRevenue: totalAppointments > 0 ? Math.round(totalRevenue / totalAppointments) : 0
+      },
+      monthlyData: monthlyData.map(item => ({
+        month: new Date(item._id.year, item._id.month - 1).toLocaleDateString('en-US', { month: 'short' }),
+        appointments: item.appointments,
+        revenue: item.revenue,
+        patients: item.patients
+      })),
+      appointmentStatusData,
+      timeSlotData: timeSlotData.map(item => ({
+        time: item._id,
+        appointments: item.count
+      }))
+    });
+  } catch (err) {
+    console.error('Get analytics error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Get doctor's time slots
+exports.getTimeSlots = async (req, res) => {
+  try {
+    const doctorId = req.user.userId;
+    const { date, status, page = 1, limit = 20 } = req.query;
+
+    let query = { doctorId: doctorId };
+
+    if (date) {
+      const searchDate = new Date(date);
+      const nextDay = new Date(searchDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+      query.date = { $gte: searchDate, $lt: nextDay };
+    }
+
+    if (status) {
+      query.status = status;
+    }
+
+    const timeSlots = await TimeSlot.find(query)
+      .sort({ date: 1, startTime: 1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
+
+    const total = await TimeSlot.countDocuments(query);
+
+    res.json({
+      timeSlots,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
+      total
+    });
+  } catch (err) {
+    console.error('Get time slots error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Create time slot
+exports.createTimeSlot = async (req, res) => {
+  try {
+    const doctorId = req.user.userId;
+    const {
+      date,
+      startTime,
+      endTime,
+      duration = 30,
+      isRecurring = false,
+      recurringPattern,
+      recurringEndDate,
+      maxPatients = 1,
+      notes
+    } = req.body;
+
+    // Validate required fields
+    if (!date || !startTime || !endTime) {
+      return res.status(400).json({ error: 'Date, start time, and end time are required' });
+    }
+
+    // Validate recurring fields
+    if (isRecurring && (!recurringPattern || !recurringEndDate)) {
+      return res.status(400).json({ error: 'Recurring pattern and end date are required for recurring slots' });
+    }
+
+    const timeSlotData = {
+      doctorId,
+      date: new Date(date),
+      startTime,
+      endTime,
+      duration,
+      isRecurring,
+      recurringPattern,
+      recurringEndDate: recurringEndDate ? new Date(recurringEndDate) : null,
+      maxPatients,
+      notes
+    };
+
+    if (isRecurring) {
+      // Create multiple slots based on recurring pattern
+      const slots = [];
+      const startDate = new Date(date);
+      const endDate = new Date(recurringEndDate);
+
+      let currentDate = new Date(startDate);
+
+      while (currentDate <= endDate) {
+        const slotData = {
+          ...timeSlotData,
+          date: new Date(currentDate)
+        };
+
+        const slot = new TimeSlot(slotData);
+        slots.push(slot);
+
+        // Move to next occurrence based on pattern
+        switch (recurringPattern) {
+          case 'daily':
+            currentDate.setDate(currentDate.getDate() + 1);
+            break;
+          case 'weekly':
+            currentDate.setDate(currentDate.getDate() + 7);
+            break;
+          case 'monthly':
+            currentDate.setMonth(currentDate.getMonth() + 1);
+            break;
+        }
+      }
+
+      const savedSlots = await TimeSlot.insertMany(slots);
+      res.status(201).json({
+        message: `${savedSlots.length} recurring time slots created successfully`,
+        timeSlots: savedSlots
+      });
+    } else {
+      // Create single slot
+      const timeSlot = new TimeSlot(timeSlotData);
+      await timeSlot.save();
+
+      res.status(201).json({
+        message: 'Time slot created successfully',
+        timeSlot
+      });
+    }
+  } catch (err) {
+    console.error('Create time slot error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Update time slot
+exports.updateTimeSlot = async (req, res) => {
+  try {
+    const doctorId = req.user.userId;
+    const timeSlotId = req.params.id;
+    const updateData = req.body;
+
+    const timeSlot = await TimeSlot.findOne({
+      _id: timeSlotId,
+      doctorId: doctorId
+    });
+
+    if (!timeSlot) {
+      return res.status(404).json({ error: 'Time slot not found' });
+    }
+
+    Object.assign(timeSlot, updateData);
+    await timeSlot.save();
+
+    res.json({
+      message: 'Time slot updated successfully',
+      timeSlot
+    });
+  } catch (err) {
+    console.error('Update time slot error:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+};
+
+// Delete time slot
+exports.deleteTimeSlot = async (req, res) => {
+  try {
+    const doctorId = req.user.userId;
+    const timeSlotId = req.params.id;
+
+    const timeSlot = await TimeSlot.findOneAndDelete({
+      _id: timeSlotId,
+      doctorId: doctorId
+    });
+
+    if (!timeSlot) {
+      return res.status(404).json({ error: 'Time slot not found' });
+    }
+
+    res.json({
+      message: 'Time slot deleted successfully'
+    });
+  } catch (err) {
+    console.error('Delete time slot error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };

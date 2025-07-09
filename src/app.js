@@ -12,6 +12,7 @@ const medicationRoutes = require('./routes/medication');
 const appointmentRoutes = require('./routes/appointment');
 const doctorRoutes = require('./routes/doctor');
 const patientRoutes = require('./routes/patient');
+const glucoseTargetRoutes = require('./routes/glucoseTargets');
 
 const app = express();
 
@@ -44,6 +45,7 @@ app.use('/medications', medicationRoutes);
 app.use('/appointments', appointmentRoutes);
 app.use('/doctor', doctorRoutes);
 app.use('/patients', patientRoutes);
+app.use('/glucose-targets', glucoseTargetRoutes);
 
 // Routes placeholder
 app.get('/', (req, res) => {

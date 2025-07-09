@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import { Card, CardContent, CardHeader } from '../components/UI/Card';
 import { Button } from '../components/UI/Button';
 import { Modal } from '../components/UI/Modal';
@@ -13,10 +14,15 @@ import {
   Zap,
   Dumbbell,
   Clock,
+  Bell,
+  Settings,
+  Loader2,
 } from 'lucide-react';
 import { mockDiabetesCareData } from '../data/mockData';
 import { DiabetesCareData, GlucoseReading, FoodEntry, InsulinDose, ExerciseEntry } from '../types';
 import { useLocalStorage } from '../hooks/useLocalStorage';
+import { useGlucoseTargets } from '../hooks/useGlucoseTargets';
+import { useHealthData } from '../hooks/useHealthData';
 
 export const DiabetesCare: React.FC = () => {
   const [diabetesData, setDiabetesData] = useLocalStorage<DiabetesCareData>('diabetesData', mockDiabetesCareData);
@@ -24,8 +30,24 @@ export const DiabetesCare: React.FC = () => {
   const [isFoodModalOpen, setIsFoodModalOpen] = useState(false);
   const [isInsulinModalOpen, setIsInsulinModalOpen] = useState(false);
   const [isExerciseModalOpen, setIsExerciseModalOpen] = useState(false);
+  const [isTargetModalOpen, setIsTargetModalOpen] = useState(false);
+  const [isReminderModalOpen, setIsReminderModalOpen] = useState(false);
   const [isPredictionLoading, setPredictionLoading] = useState(false);
   const [predictedGlucose, setPredictedGlucose] = useState<number | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [success, setSuccess] = useState('');
+
+  // Hooks for glucose targets and health data
+  const {
+    targets,
+    updateTargets,
+    updateReminderSettings,
+    isWithinTarget,
+    getTargetRange,
+    getStatusColor,
+    getStatusText
+  } = useGlucoseTargets();
+  const { addHealthData } = useHealthData();
 
   const [glucoseForm, setGlucoseForm] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -60,20 +82,96 @@ export const DiabetesCare: React.FC = () => {
     notes: '',
   });
 
-  const handleAddGlucose = () => {
-    if (glucoseForm.fastingGlucose || glucoseForm.postMealGlucose) {
-      const newReading: GlucoseReading = {
-        id: Date.now().toString(),
-        date: glucoseForm.date,
-        fastingGlucose: glucoseForm.fastingGlucose ? parseInt(glucoseForm.fastingGlucose) : undefined,
-        postMealGlucose: glucoseForm.postMealGlucose ? parseInt(glucoseForm.postMealGlucose) : undefined,
-        type: glucoseForm.fastingGlucose ? 'fasting' : 'post_meal',
-        notes: glucoseForm.notes,
-      };
-      setDiabetesData({
-        ...diabetesData,
-        glucoseReadings: [newReading, ...diabetesData.glucoseReadings],
+  // Target and reminder forms
+  const [targetForm, setTargetForm] = useState({
+    fastingMin: 70,
+    fastingMax: 100,
+    postMealMin: 70,
+    postMealMax: 140,
+    randomMin: 70,
+    randomMax: 125,
+  });
+
+  const [reminderForm, setReminderForm] = useState({
+    reminderEnabled: true,
+    reminderTimes: [
+      { time: '08:00', type: 'fasting' as const, enabled: true },
+      { time: '14:00', type: 'post_meal' as const, enabled: true },
+      { time: '20:00', type: 'random' as const, enabled: true }
+    ],
+    reminderDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+  });
+
+  // Prediction form state
+  const [predictionForm, setPredictionForm] = useState({
+    age: 0,
+    bmi: 0,
+    cholesterol: 0,
+    prev_fasting: 0,
+    bp: 0,
+    smoking: '',
+  });
+
+  // Initialize forms when targets are loaded
+  React.useEffect(() => {
+    if (targets) {
+      setTargetForm({
+        fastingMin: targets.fastingMin,
+        fastingMax: targets.fastingMax,
+        postMealMin: targets.postMealMin,
+        postMealMax: targets.postMealMax,
+        randomMin: targets.randomMin,
+        randomMax: targets.randomMax,
       });
+      setReminderForm({
+        reminderEnabled: targets.reminderEnabled,
+        reminderTimes: targets.reminderTimes,
+        reminderDays: targets.reminderDays
+      });
+    }
+  }, [targets]);
+
+  // Auto-populate prediction form with available data
+  React.useEffect(() => {
+    const latestGlucose = diabetesData.glucoseReadings[0];
+    if (latestGlucose?.fastingGlucose && predictionForm.prev_fasting === 0) {
+      setPredictionForm(prev => ({
+        ...prev,
+        prev_fasting: latestGlucose.fastingGlucose || 0
+      }));
+    }
+  }, [diabetesData.glucoseReadings, predictionForm.prev_fasting]);
+
+  const handleAddGlucose = async () => {
+    try {
+      setIsSubmitting(true);
+
+      // Add fasting glucose if provided
+      if (glucoseForm.fastingGlucose) {
+        await handleAddGlucoseReading('fasting', parseInt(glucoseForm.fastingGlucose));
+      }
+
+      // Add post-meal glucose if provided
+      if (glucoseForm.postMealGlucose) {
+        await handleAddGlucoseReading('post_meal', parseInt(glucoseForm.postMealGlucose));
+      }
+
+      // Also update local state for immediate UI feedback
+      if (glucoseForm.fastingGlucose || glucoseForm.postMealGlucose) {
+        const newReading: GlucoseReading = {
+          id: Date.now().toString(),
+          date: glucoseForm.date,
+          fastingGlucose: glucoseForm.fastingGlucose ? parseInt(glucoseForm.fastingGlucose) : undefined,
+          postMealGlucose: glucoseForm.postMealGlucose ? parseInt(glucoseForm.postMealGlucose) : undefined,
+          type: glucoseForm.fastingGlucose ? 'fasting' : 'post_meal',
+          notes: glucoseForm.notes,
+        };
+        setDiabetesData({
+          ...diabetesData,
+          glucoseReadings: [newReading, ...diabetesData.glucoseReadings],
+        });
+      }
+
       setIsGlucoseModalOpen(false);
       setGlucoseForm({
         date: new Date().toISOString().split('T')[0],
@@ -81,6 +179,12 @@ export const DiabetesCare: React.FC = () => {
         postMealGlucose: '',
         notes: '',
       });
+      setSuccess('Glucose readings added successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error('Failed to add glucose readings:', error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -163,18 +267,98 @@ export const DiabetesCare: React.FC = () => {
     }
   };
 
-  const handlePredictGlucose = async () => {
+  const handlePredictionFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setPredictionForm(prev => ({
+      ...prev,
+      [name]: name === 'smoking' ? value : parseFloat(value) || 0
+    }));
+  };
+
+  const handlePredictGlucose = async (e: React.FormEvent) => {
+    e.preventDefault();
     setPredictionLoading(true);
-    // Simulate AI prediction
-    setTimeout(() => {
+
+    try {
+      // Call the ML model API
+      const response = await fetch('http://127.0.0.1:8000/predict', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...predictionForm,
+          smoking: parseInt(predictionForm.smoking)
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Prediction request failed');
+      }
+
+      const data = await response.json();
+      setPredictedGlucose(Math.round(data.predicted_future_fasting));
+      setSuccess('Prediction generated successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error('Prediction request failed:', error);
+
+      // Fallback to simulated prediction if API is not available
       const avgFasting = diabetesData.glucoseReadings
         .filter(r => r.fastingGlucose)
         .reduce((sum, r) => sum + (r.fastingGlucose || 0), 0) / diabetesData.glucoseReadings.filter(r => r.fastingGlucose).length;
-      
-      const prediction = Math.round(avgFasting * 0.98 + Math.random() * 10 - 5);
-      setPredictedGlucose(prediction);
+
+      const fallbackPrediction = Math.round((avgFasting || predictionForm.prev_fasting) * 0.98 + Math.random() * 10 - 5);
+      setPredictedGlucose(fallbackPrediction);
+      setSuccess('Prediction generated using fallback model (API unavailable)');
+      setTimeout(() => setSuccess(''), 3000);
+    } finally {
       setPredictionLoading(false);
-    }, 2000);
+    }
+  };
+
+  const handleUpdateTargets = async () => {
+    try {
+      setIsSubmitting(true);
+      await updateTargets(targetForm);
+      setSuccess('Glucose targets updated successfully!');
+      setIsTargetModalOpen(false);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error('Failed to update targets:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUpdateReminders = async () => {
+    try {
+      setIsSubmitting(true);
+      await updateReminderSettings(reminderForm);
+      setSuccess('Reminder settings updated successfully!');
+      setIsReminderModalOpen(false);
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      console.error('Failed to update reminders:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddGlucoseReading = async (type: 'fasting' | 'post_meal' | 'random', value: number) => {
+    try {
+      await addHealthData({
+        type: 'glucose',
+        value: value,
+        unit: 'mg/dL',
+        type: type,
+        notes: `Added from Diabetes Care - ${type} reading`
+      });
+      setSuccess('Glucose reading added successfully!');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (error) {
+      console.error('Failed to add glucose reading:', error);
+    }
   };
 
   const latestGlucose = diabetesData.glucoseReadings[0];
@@ -189,6 +373,13 @@ export const DiabetesCare: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Success Message */}
+      {success && (
+        <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+          {success}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -221,9 +412,25 @@ export const DiabetesCare: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-gray-600">Latest Glucose</p>
-                <p className="text-2xl font-bold text-blue-600">
-                  {latestGlucose?.fastingGlucose || '--'} mg/dL
-                </p>
+                <div className="flex items-center space-x-2">
+                  <p className="text-2xl font-bold text-blue-600">
+                    {latestGlucose?.fastingGlucose || '--'} mg/dL
+                  </p>
+                  {latestGlucose?.fastingGlucose && targets && (
+                    <span className={`text-xs px-2 py-1 rounded-full ${
+                      isWithinTarget(latestGlucose.fastingGlucose, 'fasting')
+                        ? 'bg-green-100 text-green-800'
+                        : 'bg-red-100 text-red-800'
+                    }`}>
+                      {getStatusText(latestGlucose.fastingGlucose, 'fasting')}
+                    </span>
+                  )}
+                </div>
+                {targets && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Target: {targets.fastingMin}-{targets.fastingMax} mg/dL
+                  </p>
+                )}
               </div>
               <Activity className="h-8 w-8 text-blue-500" />
             </div>
@@ -273,34 +480,217 @@ export const DiabetesCare: React.FC = () => {
 
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Glucose Trends */}
-        <Card className="lg:col-span-2">
+        {/* Fasting Blood Sugar Prediction Model */}
+        <Card className="lg:col-span-2" data-prediction-section>
           <CardHeader>
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-900">Glucose Trends</h3>
-              <Button
-                onClick={handlePredictGlucose}
-                loading={isPredictionLoading}
-                icon={Brain}
-                size="sm"
-                variant="outline"
-              >
-                AI Predict
-              </Button>
+              <div className="flex items-center space-x-2">
+                <Brain className="h-5 w-5 text-purple-600" />
+                <h3 className="text-lg font-semibold text-gray-900">Fasting Blood Sugar Prediction</h3>
+              </div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded-full">AI Model</span>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="h-64 bg-gradient-to-br from-blue-50 to-purple-50 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300">
-              <div className="text-center">
-                <Activity className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-600">Interactive glucose chart</p>
-                <p className="text-sm text-gray-500 mt-1">Showing fasting and post-meal trends</p>
-                {predictedGlucose && (
-                  <div className="mt-4 p-3 bg-purple-100 rounded-lg">
-                    <p className="text-sm text-purple-700">Next Week Prediction</p>
-                    <p className="text-xl font-bold text-purple-600">{predictedGlucose} mg/dL</p>
+            <div className="space-y-6">
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-medium text-blue-900 mb-2">🤖 AI-Powered Prediction</h4>
+                <p className="text-sm text-blue-700">
+                  Our machine learning model analyzes your health parameters to predict future fasting blood sugar levels.
+                  This helps you understand potential trends and take preventive measures.
+                </p>
+              </div>
+
+              <form onSubmit={handlePredictGlucose} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Age (years) *
+                    </label>
+                    <input
+                      type="number"
+                      name="age"
+                      value={predictionForm.age}
+                      onChange={handlePredictionFormChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="e.g., 45"
+                      required
+                      min="18"
+                      max="100"
+                    />
                   </div>
-                )}
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      BMI (Body Mass Index) *
+                    </label>
+                    <input
+                      type="number"
+                      name="bmi"
+                      value={predictionForm.bmi}
+                      onChange={handlePredictionFormChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="e.g., 25.5"
+                      required
+                      min="15"
+                      max="50"
+                      step="0.1"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Cholesterol Level (mg/dL) *
+                    </label>
+                    <input
+                      type="number"
+                      name="cholesterol"
+                      value={predictionForm.cholesterol}
+                      onChange={handlePredictionFormChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="e.g., 180"
+                      required
+                      min="100"
+                      max="400"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Previous Fasting Glucose (mg/dL) *
+                    </label>
+                    <input
+                      type="number"
+                      name="prev_fasting"
+                      value={predictionForm.prev_fasting}
+                      onChange={handlePredictionFormChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="e.g., 95"
+                      required
+                      min="70"
+                      max="300"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Blood Pressure (Systolic) *
+                    </label>
+                    <input
+                      type="number"
+                      name="bp"
+                      value={predictionForm.bp}
+                      onChange={handlePredictionFormChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      placeholder="e.g., 120"
+                      required
+                      min="90"
+                      max="200"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Smoking Status *
+                    </label>
+                    <select
+                      name="smoking"
+                      value={predictionForm.smoking}
+                      onChange={handlePredictionFormChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                      required
+                    >
+                      <option value="">Select smoking status</option>
+                      <option value="0">Non-smoker</option>
+                      <option value="1">Current smoker</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex justify-center pt-4">
+                  <Button
+                    type="submit"
+                    disabled={isPredictionLoading}
+                    className="bg-purple-600 hover:bg-purple-700 text-white px-6 py-2"
+                  >
+                    {isPredictionLoading ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Brain className="h-4 w-4 mr-2" />
+                        Predict Future Fasting Glucose
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </form>
+
+              {predictedGlucose !== null && (
+                <div className="mt-6 p-6 bg-gradient-to-r from-purple-50 to-blue-50 rounded-lg border border-purple-200">
+                  <div className="text-center">
+                    <h4 className="text-lg font-semibold text-purple-900 mb-2">🎯 Prediction Result</h4>
+                    <div className="text-3xl font-bold text-purple-600 mb-2">
+                      {predictedGlucose} mg/dL
+                    </div>
+                    <p className="text-sm text-purple-700 mb-4">Predicted Future Fasting Glucose Level</p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                      <div className="bg-white p-3 rounded-lg">
+                        <p className="text-xs text-gray-600">Normal Range</p>
+                        <p className="text-sm font-medium text-green-600">70-100 mg/dL</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg">
+                        <p className="text-xs text-gray-600">Pre-diabetes</p>
+                        <p className="text-sm font-medium text-yellow-600">100-125 mg/dL</p>
+                      </div>
+                      <div className="bg-white p-3 rounded-lg">
+                        <p className="text-xs text-gray-600">Diabetes</p>
+                        <p className="text-sm font-medium text-red-600">≥126 mg/dL</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 p-3 bg-white rounded-lg">
+                      <p className="text-xs text-gray-600 mb-1">Your Prediction Status</p>
+                      <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${
+                        predictedGlucose < 100
+                          ? 'bg-green-100 text-green-800'
+                          : predictedGlucose < 126
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-red-100 text-red-800'
+                      }`}>
+                        {predictedGlucose < 100
+                          ? '✅ Normal Range'
+                          : predictedGlucose < 126
+                          ? '⚠️ Pre-diabetes Range'
+                          : '🚨 Diabetes Range'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                  <Settings className="h-4 w-4 mr-2 text-gray-600" />
+                  How This Prediction Works
+                </h4>
+                <div className="space-y-2 text-sm text-gray-600">
+                  <p>• <strong>Machine Learning Model:</strong> Uses advanced regression algorithms trained on health data</p>
+                  <p>• <strong>Key Factors:</strong> Age, BMI, cholesterol, previous glucose levels, blood pressure, and smoking status</p>
+                  <p>• <strong>Accuracy:</strong> Predictions are estimates based on statistical patterns, not medical diagnoses</p>
+                  <p>• <strong>Usage:</strong> Use this tool to understand trends and discuss results with your healthcare provider</p>
+                </div>
+                <div className="mt-3 p-3 bg-yellow-50 rounded border border-yellow-200">
+                  <p className="text-xs text-yellow-800">
+                    <strong>⚠️ Important:</strong> This prediction is for informational purposes only.
+                    Always consult with your healthcare provider for medical decisions and treatment plans.
+                  </p>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -333,15 +723,31 @@ export const DiabetesCare: React.FC = () => {
                 icon={Target}
                 className="w-full justify-start"
                 variant="outline"
+                onClick={() => setIsTargetModalOpen(true)}
               >
                 Set Glucose Target
               </Button>
               <Button
-                icon={Calendar}
+                icon={Bell}
                 className="w-full justify-start"
                 variant="outline"
+                onClick={() => setIsReminderModalOpen(true)}
               >
                 Schedule Reminder
+              </Button>
+              <Button
+                icon={Brain}
+                className="w-full justify-start bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
+                variant="outline"
+                onClick={() => {
+                  // Scroll to prediction section
+                  const predictionSection = document.querySelector('[data-prediction-section]');
+                  if (predictionSection) {
+                    predictionSection.scrollIntoView({ behavior: 'smooth' });
+                  }
+                }}
+              >
+                AI Glucose Prediction
               </Button>
             </div>
           </CardContent>
@@ -457,8 +863,26 @@ export const DiabetesCare: React.FC = () => {
             />
           </div>
           <div className="flex justify-end space-x-3">
-            <Button variant="outline" onClick={() => setIsGlucoseModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleAddGlucose}>Add Reading</Button>
+            <Button
+              variant="outline"
+              onClick={() => setIsGlucoseModalOpen(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddGlucose}
+              disabled={isSubmitting || (!glucoseForm.fastingGlucose && !glucoseForm.postMealGlucose)}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Adding...
+                </>
+              ) : (
+                'Add Reading'
+              )}
+            </Button>
           </div>
         </div>
       </Modal>
@@ -656,6 +1080,324 @@ export const DiabetesCare: React.FC = () => {
           <div className="flex justify-end space-x-3">
             <Button variant="outline" onClick={() => setIsExerciseModalOpen(false)}>Cancel</Button>
             <Button onClick={handleAddExercise}>Log Exercise</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Glucose Target Settings Modal */}
+      <Modal
+        isOpen={isTargetModalOpen}
+        onClose={() => setIsTargetModalOpen(false)}
+        title="Set Glucose Targets"
+        size="lg"
+      >
+        <div className="space-y-6">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <h4 className="font-medium text-blue-900 mb-2">About Glucose Targets</h4>
+            <p className="text-sm text-blue-700">
+              Set personalized glucose target ranges to help monitor your diabetes management.
+              These targets will be used to provide feedback on your glucose readings.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Fasting Targets */}
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900 flex items-center">
+                <Target className="h-4 w-4 mr-2 text-blue-600" />
+                Fasting Glucose
+              </h4>
+              <p className="text-sm text-gray-600">Target range for fasting glucose (before meals)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600">Min (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.fastingMin}
+                    onChange={(e) => setTargetForm({...targetForm, fastingMin: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    min="50"
+                    max="200"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600">Max (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.fastingMax}
+                    onChange={(e) => setTargetForm({...targetForm, fastingMax: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    min="50"
+                    max="200"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Post-Meal Targets */}
+            <div className="space-y-3">
+              <h4 className="font-medium text-gray-900 flex items-center">
+                <Utensils className="h-4 w-4 mr-2 text-green-600" />
+                Post-Meal Glucose
+              </h4>
+              <p className="text-sm text-gray-600">Target range 2 hours after meals</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm text-gray-600">Min (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.postMealMin}
+                    onChange={(e) => setTargetForm({...targetForm, postMealMin: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    min="50"
+                    max="300"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600">Max (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.postMealMax}
+                    onChange={(e) => setTargetForm({...targetForm, postMealMax: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    min="50"
+                    max="300"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Random Targets */}
+            <div className="space-y-3 md:col-span-2">
+              <h4 className="font-medium text-gray-900 flex items-center">
+                <Activity className="h-4 w-4 mr-2 text-purple-600" />
+                Random Glucose
+              </h4>
+              <p className="text-sm text-gray-600">Target range for random glucose checks</p>
+              <div className="grid grid-cols-2 gap-3 max-w-md">
+                <div>
+                  <label className="block text-sm text-gray-600">Min (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.randomMin}
+                    onChange={(e) => setTargetForm({...targetForm, randomMin: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    min="50"
+                    max="250"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600">Max (mg/dL)</label>
+                  <input
+                    type="number"
+                    value={targetForm.randomMax}
+                    onChange={(e) => setTargetForm({...targetForm, randomMax: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                    min="50"
+                    max="250"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-yellow-50 p-4 rounded-lg">
+            <p className="text-sm text-yellow-700">
+              <strong>Note:</strong> These targets should be set in consultation with your healthcare provider.
+              Default values are based on general guidelines but may not be suitable for everyone.
+            </p>
+          </div>
+
+          <div className="flex justify-end space-x-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => setIsTargetModalOpen(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateTargets}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                'Save Targets'
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Glucose Reminder Settings Modal */}
+      <Modal
+        isOpen={isReminderModalOpen}
+        onClose={() => setIsReminderModalOpen(false)}
+        title="Schedule Glucose Reminders"
+        size="lg"
+      >
+        <div className="space-y-6">
+          <div className="bg-green-50 p-4 rounded-lg">
+            <h4 className="font-medium text-green-900 mb-2">Smart Glucose Reminders</h4>
+            <p className="text-sm text-green-700">
+              Set up personalized reminders to help you maintain consistent glucose monitoring.
+              You can customize reminder times and types based on your daily routine.
+            </p>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <input
+              type="checkbox"
+              id="reminder-enabled"
+              checked={reminderForm.reminderEnabled}
+              onChange={(e) => setReminderForm({...reminderForm, reminderEnabled: e.target.checked})}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="reminder-enabled" className="text-sm font-medium text-gray-900">
+              Enable glucose testing reminders
+            </label>
+          </div>
+
+          {reminderForm.reminderEnabled && (
+            <>
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                  <Clock className="h-4 w-4 mr-2 text-blue-600" />
+                  Reminder Times
+                </h4>
+                <div className="space-y-3">
+                  {reminderForm.reminderTimes.map((reminder, index) => (
+                    <div key={index} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                      <input
+                        type="checkbox"
+                        checked={reminder.enabled}
+                        onChange={(e) => {
+                          const newTimes = [...reminderForm.reminderTimes];
+                          newTimes[index].enabled = e.target.checked;
+                          setReminderForm({...reminderForm, reminderTimes: newTimes});
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <Clock className="h-4 w-4 text-gray-400" />
+                      <input
+                        type="time"
+                        value={reminder.time}
+                        onChange={(e) => {
+                          const newTimes = [...reminderForm.reminderTimes];
+                          newTimes[index].time = e.target.value;
+                          setReminderForm({...reminderForm, reminderTimes: newTimes});
+                        }}
+                        className="px-3 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                      />
+                      <select
+                        value={reminder.type}
+                        onChange={(e) => {
+                          const newTimes = [...reminderForm.reminderTimes];
+                          newTimes[index].type = e.target.value as any;
+                          setReminderForm({...reminderForm, reminderTimes: newTimes});
+                        }}
+                        className="px-3 py-1 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="fasting">Fasting Check</option>
+                        <option value="post_meal">Post-Meal Check</option>
+                        <option value="random">Random Check</option>
+                      </select>
+                      <span className="text-xs text-gray-500">
+                        {reminder.type === 'fasting' && '🌅 Before breakfast'}
+                        {reminder.type === 'post_meal' && '🍽️ After meals'}
+                        {reminder.type === 'random' && '🔄 Anytime'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setReminderForm({
+                      ...reminderForm,
+                      reminderTimes: [
+                        ...reminderForm.reminderTimes,
+                        { time: '12:00', type: 'random', enabled: true }
+                      ]
+                    });
+                  }}
+                  className="mt-3"
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Add Reminder
+                </Button>
+              </div>
+
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3 flex items-center">
+                  <Calendar className="h-4 w-4 mr-2 text-green-600" />
+                  Reminder Days
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
+                    <label key={day} className="flex items-center space-x-2 p-2 border rounded-lg hover:bg-gray-50">
+                      <input
+                        type="checkbox"
+                        checked={reminderForm.reminderDays.includes(day)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setReminderForm({
+                              ...reminderForm,
+                              reminderDays: [...reminderForm.reminderDays, day]
+                            });
+                          } else {
+                            setReminderForm({
+                              ...reminderForm,
+                              reminderDays: reminderForm.reminderDays.filter(d => d !== day)
+                            });
+                          }
+                        }}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700 capitalize">{day.slice(0, 3)}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h5 className="font-medium text-blue-900 mb-2">Reminder Tips</h5>
+                <ul className="text-sm text-blue-700 space-y-1">
+                  <li>• Fasting reminders work best in the morning before breakfast</li>
+                  <li>• Post-meal reminders should be 2 hours after eating</li>
+                  <li>• Random checks help track glucose patterns throughout the day</li>
+                  <li>• Consistent timing helps build healthy monitoring habits</li>
+                </ul>
+              </div>
+            </>
+          )}
+
+          <div className="flex justify-end space-x-3 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => setIsReminderModalOpen(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUpdateReminders}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Saving...
+                </>
+              ) : (
+                'Save Reminders'
+              )}
+            </Button>
           </div>
         </div>
       </Modal>

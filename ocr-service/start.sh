@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "Starting OCR Microservice..."
+echo "🚀 Starting OCR Service on Port 3002..."
 
 # Check if Python 3 is available
 if ! command -v python3 &> /dev/null; then

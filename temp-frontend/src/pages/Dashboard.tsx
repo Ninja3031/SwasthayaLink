@@ -15,16 +15,19 @@ import {
   Heart,
   Weight,
   Loader2,
+  Bell,
 } from 'lucide-react';
 import { useHealthData } from '../hooks/useHealthData';
 import { useAuth } from '../hooks/useAuth';
 import { useNotifications } from '../hooks/useNotifications';
 import { useAppointments } from '../hooks/useAppointments';
 import { useMedications } from '../hooks/useMedications';
+import { useGlucoseTargets } from '../hooks/useGlucoseTargets';
 
 export const Dashboard: React.FC = () => {
   const [isGlucoseModalOpen, setIsGlucoseModalOpen] = useState(false);
   const [isBPModalOpen, setIsBPModalOpen] = useState(false);
+  const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newGlucoseReading, setNewGlucoseReading] = useState({
     value: '',
@@ -36,12 +39,17 @@ export const Dashboard: React.FC = () => {
     diastolic: '',
     notes: '',
   });
+  const [newWeightReading, setNewWeightReading] = useState({
+    value: '',
+    notes: '',
+  });
 
   const { user } = useAuth();
   const { healthData, addHealthData, getHealthDataByType, getLatestReading, isLoading, error } = useHealthData();
   const { notifications } = useNotifications();
   const { getUpcomingAppointments } = useAppointments();
   const { medications } = useMedications();
+  const { targets } = useGlucoseTargets();
 
   // Get health data by type
   const glucoseReadings = getHealthDataByType('glucose');
@@ -64,6 +72,12 @@ export const Dashboard: React.FC = () => {
     const endDate = new Date(med.endDate);
     return today >= startDate && today <= endDate && med.isActive;
   });
+
+  // Get today's glucose reminders
+  const todayGlucoseReminders = targets?.reminderEnabled ? targets.reminderTimes.filter(reminder => {
+    const today = new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+    return reminder.enabled && targets.reminderDays.includes(today);
+  }) : [];
 
   // Calculate predicted glucose (simple prediction based on latest reading)
   const predictedGlucose = latestGlucoseReading?.value
@@ -120,6 +134,27 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const handleAddWeightReading = async () => {
+    if (!newWeightReading.value) return;
+
+    setIsSubmitting(true);
+    try {
+      await addHealthData({
+        type: 'weight',
+        value: parseFloat(newWeightReading.value),
+        unit: 'kg',
+      });
+
+      setNewWeightReading({ value: '', notes: '' });
+      setIsWeightModalOpen(false);
+    } catch (error) {
+      console.error('Failed to add weight reading:', error);
+      // You could add a toast notification here
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -147,6 +182,15 @@ export const Dashboard: React.FC = () => {
             disabled={isLoading}
           >
             Add BP Reading
+          </Button>
+          <Button
+            onClick={() => setIsWeightModalOpen(true)}
+            icon={Weight}
+            variant="outline"
+            className="shadow-lg"
+            disabled={isLoading}
+          >
+            Add Weight
           </Button>
         </div>
       </div>
@@ -260,7 +304,7 @@ export const Dashboard: React.FC = () => {
               <div>
                 <p className="text-sm text-gray-600">Current Weight</p>
                 <p className="text-2xl font-bold text-yellow-600">
-                  {latestWeightReading ? `${latestWeightReading.value.weight} kg` : '--'}
+                  {latestWeightReading ? `${latestWeightReading.value} kg` : '--'}
                 </p>
               </div>
               <Weight className="h-8 w-8 text-yellow-500" />
@@ -351,8 +395,8 @@ export const Dashboard: React.FC = () => {
         </Card>
       </div>
 
-      {/* Upcoming Appointments and Medication Reminders */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Upcoming Appointments and Reminders */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Upcoming Appointments */}
         <Card>
           <CardHeader>
@@ -425,6 +469,53 @@ export const Dashboard: React.FC = () => {
               ))}
               {todayMedications.length === 0 && (
                 <p className="text-gray-500 text-center py-4">No medications scheduled for today</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Glucose Reminders */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Today's Glucose Reminders</h3>
+              <Link to="/diabetes-care">
+                <Button variant="outline" size="sm">Manage</Button>
+              </Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {todayGlucoseReminders.slice(0, 3).map((reminder, index) => (
+                <div key={index} className="flex items-center space-x-3 p-3 bg-blue-50 rounded-lg">
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                    <Clock className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900">
+                      {reminder.type === 'fasting' && '🌅 Fasting Glucose Check'}
+                      {reminder.type === 'post_meal' && '🍽️ Post-Meal Glucose Check'}
+                      {reminder.type === 'random' && '🔄 Random Glucose Check'}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Scheduled for {reminder.time}
+                    </p>
+                  </div>
+                  <div className="text-xs">
+                    <span className="text-blue-600 font-medium">Reminder Set</span>
+                  </div>
+                </div>
+              ))}
+              {todayGlucoseReminders.length === 0 && (
+                <div className="text-center py-4">
+                  <p className="text-gray-500 mb-2">No glucose reminders set for today</p>
+                  <Link to="/diabetes-care">
+                    <Button variant="outline" size="sm">
+                      <Bell className="h-4 w-4 mr-2" />
+                      Set Reminders
+                    </Button>
+                  </Link>
+                </div>
               )}
             </div>
           </CardContent>
@@ -575,6 +666,68 @@ export const Dashboard: React.FC = () => {
                 </>
               ) : (
                 'Add Reading'
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Weight Modal */}
+      <Modal
+        isOpen={isWeightModalOpen}
+        onClose={() => setIsWeightModalOpen(false)}
+        title="Add Weight Reading"
+      >
+        <div className="space-y-4">
+          <div>
+            <label htmlFor="weight-value" className="block text-sm font-medium text-gray-700">
+              Weight (kg) *
+            </label>
+            <input
+              type="number"
+              id="weight-value"
+              value={newWeightReading.value}
+              onChange={(e) => setNewWeightReading({ ...newWeightReading, value: e.target.value })}
+              step="0.1"
+              min="0"
+              max="300"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
+              placeholder="Enter your current weight"
+            />
+          </div>
+          <div>
+            <label htmlFor="weight-notes" className="block text-sm font-medium text-gray-700">
+              Notes (optional)
+            </label>
+            <textarea
+              id="weight-notes"
+              value={newWeightReading.notes}
+              onChange={(e) => setNewWeightReading({ ...newWeightReading, notes: e.target.value })}
+              rows={3}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-yellow-500 focus:ring-yellow-500"
+              placeholder="Any additional notes..."
+            />
+          </div>
+          <div className="flex justify-end space-x-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsWeightModalOpen(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddWeightReading}
+              disabled={isSubmitting || !newWeightReading.value}
+              className="bg-yellow-600 hover:bg-yellow-700"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Adding...
+                </>
+              ) : (
+                'Add Weight'
               )}
             </Button>
           </div>

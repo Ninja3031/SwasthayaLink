@@ -1,0 +1,5 @@
+age,cholesterol,blood_pressure,bmi,smoking,risk_level
+65,220,145,29,1,1
+45,180,130,25,0,0
+70,240,150,31,1,1
+50,190,135,27,0,0
