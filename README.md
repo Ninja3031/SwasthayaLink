@@ -45,6 +45,48 @@ SwasthayaLink is a smart healthcare dashboard and consultation platform designed
 ![System Architecture](https://github.com/user-attachments/assets/46e12f8d-59ba-4fdd-af62-825e1dad30fe)
 ![System Overview](https://github.com/user-attachments/assets/a04ace8d-dd11-45d3-bbdd-b8b79d5f80a4)
 
+## 🚀 Getting Started & Deployment
+
+### Local Development
+
+1. **Setup Environment**
+   ```bash
+   npm run setup
+   ```
+
+2. **Install Dependencies**
+   ```bash
+   # Backend
+   npm install
+
+   # Patient Frontend
+   cd temp-frontend && npm install
+
+   # Doctor Frontend
+   cd Doctorside && npm install
+   ```
+
+3. **Start Services**
+   ```bash
+   # Backend (Terminal 1)
+   npm run dev
+
+   # Patient Portal (Terminal 2)
+   cd temp-frontend && npm run dev
+
+   # Doctor Portal (Terminal 3)
+   cd Doctorside && npm run dev
+   ```
+
+### 🌐 Production Deployment
+
+**Backend on Render + Frontends on Vercel**
+
+1. **Backend on Render**: Create Web Service, connect GitHub, set environment variables
+2. **Frontends on Vercel**: Create projects for `temp-frontend` and `Doctorside` directories
+
+**See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment instructions**
+
 
 
 
