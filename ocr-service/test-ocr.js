@@ -12,18 +12,19 @@ async function testOCR() {
     const healthResponse = await axios.get('http://localhost:3002/health');
     console.log('✅ Health check passed:', healthResponse.data);
     
-    // Create a simple test image (base64 encoded)
-    const testImageBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
-    const testImageBuffer = Buffer.from(testImageBase64, 'base64');
-    
-    // Save test image
-    fs.writeFileSync('./test-image.png', testImageBuffer);
+    // Use the medical document test image we created
+    const testImagePath = './test-medical-document.png';
+
+    if (!fs.existsSync(testImagePath)) {
+      console.log('❌ Test image not found. Creating one...');
+      return;
+    }
     
     // Test OCR endpoint
     console.log('2. Testing OCR endpoint...');
     const form = new FormData();
-    form.append('file', fs.createReadStream('./test-image.png'), {
-      filename: 'test-image.png',
+    form.append('file', fs.createReadStream(testImagePath), {
+      filename: 'test-medical-document.png',
       contentType: 'image/png'
     });
     
@@ -36,8 +37,7 @@ async function testOCR() {
     
     console.log('✅ OCR test passed:', ocrResponse.data);
     
-    // Clean up
-    fs.unlinkSync('./test-image.png');
+    // Don't clean up the test image - keep it for manual testing
     
     console.log('🎉 All tests passed! OCR service is working correctly.');
     

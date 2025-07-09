@@ -351,7 +351,7 @@ export const DiabetesCare: React.FC = () => {
         type: 'glucose',
         value: value,
         unit: 'mg/dL',
-        type: type,
+        readingType: type,
         notes: `Added from Diabetes Care - ${type} reading`
       });
       setSuccess('Glucose reading added successfully!');

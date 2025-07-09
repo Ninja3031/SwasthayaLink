@@ -30,7 +30,8 @@ export const UnifiedAuth: React.FC<UnifiedAuthProps> = ({
     password: '',
     confirmPassword: '',
     phone: '',
-    
+    abhaId: '',
+
     // Doctor-specific fields
     specialization: '',
     licenseNumber: '',
@@ -49,6 +50,7 @@ export const UnifiedAuth: React.FC<UnifiedAuthProps> = ({
       password: '',
       confirmPassword: '',
       phone: '',
+      abhaId: '',
       specialization: '',
       licenseNumber: '',
       hospital: '',
@@ -63,23 +65,36 @@ export const UnifiedAuth: React.FC<UnifiedAuthProps> = ({
     }));
   };
 
+  const validateAbhaId = (abhaId: string): boolean => {
+    // ABHA ID should be 14 digits
+    const abhaRegex = /^\d{14}$/;
+    return abhaRegex.test(abhaId);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (authMode === 'signup' && formData.password !== formData.confirmPassword) {
       alert('Passwords do not match');
       return;
     }
 
+    // Validate ABHA ID if provided during signup
+    if (authMode === 'signup' && formData.abhaId && !validateAbhaId(formData.abhaId)) {
+      alert('ABHA ID must be exactly 14 digits');
+      return;
+    }
+
     try {
       if (selectedRole === 'patient') {
-        const patientData = authMode === 'signin' 
+        const patientData = authMode === 'signin'
           ? { email: formData.email, password: formData.password }
           : {
               name: formData.name,
               email: formData.email,
               password: formData.password,
               phone: formData.phone,
+              abhaId: formData.abhaId,
               role: 'user'
             };
         await onPatientAuth(patientData);
@@ -91,6 +106,7 @@ export const UnifiedAuth: React.FC<UnifiedAuthProps> = ({
               email: formData.email,
               password: formData.password,
               phone: formData.phone,
+              abhaId: formData.abhaId,
               role: 'doctor',
               specialization: formData.specialization,
               licenseNumber: formData.licenseNumber,
@@ -112,6 +128,7 @@ export const UnifiedAuth: React.FC<UnifiedAuthProps> = ({
       password: '',
       confirmPassword: '',
       phone: '',
+      abhaId: '',
       specialization: '',
       licenseNumber: '',
       hospital: '',
@@ -233,16 +250,30 @@ export const UnifiedAuth: React.FC<UnifiedAuthProps> = ({
             </div>
 
             {authMode === 'signup' && (
-              <div>
-                <input
-                  name="phone"
-                  type="tel"
-                  className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
-                  placeholder="Phone number"
-                  value={formData.phone}
-                  onChange={handleInputChange}
-                />
-              </div>
+              <>
+                <div>
+                  <input
+                    name="phone"
+                    type="tel"
+                    className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                    placeholder="Phone number"
+                    value={formData.phone}
+                    onChange={handleInputChange}
+                  />
+                </div>
+                <div>
+                  <input
+                    name="abhaId"
+                    type="text"
+                    pattern="\d{14}"
+                    maxLength={14}
+                    className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 focus:z-10 sm:text-sm"
+                    placeholder="ABHA ID (14 digits) - Optional"
+                    value={formData.abhaId}
+                    onChange={handleInputChange}
+                  />
+                </div>
+              </>
             )}
 
             <div className="relative">

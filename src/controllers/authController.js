@@ -35,6 +35,11 @@ exports.signup = async (req, res) => {
     const validRoles = ['user', 'doctor'];
     const userRole = role && validRoles.includes(role) ? role : 'user';
 
+    // Validate ABHA ID if provided
+    if (abhaId && !/^\d{14}$/.test(abhaId)) {
+      return res.status(400).json({ error: 'ABHA ID must be exactly 14 digits.' });
+    }
+
     // Additional validation for doctors
     if (userRole === 'doctor') {
       if (!specialization || !licenseNumber || !hospital) {
@@ -47,6 +52,14 @@ exports.signup = async (req, res) => {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ error: 'Email already in use.' });
+    }
+
+    // Check for duplicate ABHA ID if provided
+    if (abhaId) {
+      const existingAbhaUser = await User.findOne({ abhaId });
+      if (existingAbhaUser) {
+        return res.status(400).json({ error: 'ABHA ID already in use.' });
+      }
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);

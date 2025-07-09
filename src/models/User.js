@@ -6,7 +6,7 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   phone: { type: String },
   role: { type: String, enum: ['user', 'doctor', 'admin'], default: 'user' },
-  abhaId: { type: String },
+  abhaId: { type: String, unique: true, sparse: true },
 
   // Common user fields
   dateOfBirth: { type: Date },

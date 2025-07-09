@@ -20,12 +20,10 @@ def initialize_ocr():
     if not PADDLEOCR_AVAILABLE:
         raise ImportError("PaddleOCR is not installed")
     
-    # Initialize with English language and angle classification
+    # Initialize with basic compatible parameters
     ocr = PaddleOCR(
-        use_angle_cls=True,  # Enable angle classification for rotated text
-        lang='en',           # English language
-        use_gpu=False,       # Set to True if GPU is available
-        show_log=False       # Reduce verbose logging
+        use_textline_orientation=True,  # Enable text orientation detection
+        lang='en'                       # English language
     )
     return ocr
 
@@ -47,24 +45,44 @@ def process_image_ocr(image_path, ocr_instance=None):
         ocr_instance = initialize_ocr()
     
     try:
-        # Perform OCR on the image
-        result = ocr_instance.ocr(image_path, cls=True)
+        # Perform OCR on the image using the new predict method
+        result = ocr_instance.predict(image_path)
         
-        # Extract text from results
+        # Extract text from results (handle new PaddleOCR format)
         extracted_text = ""
         confidence_scores = []
-        
-        if result and len(result) > 0:
-            for idx in range(len(result)):
-                res = result[idx]
-                if res:  # Check if results exist for this page
-                    for line in res:
-                        if len(line) >= 2:
-                            text = line[1][0]  # Extracted text
-                            confidence = line[1][1]  # Confidence score
-                            
-                            extracted_text += text + "\n"
-                            confidence_scores.append(confidence)
+
+        if result:
+            # Handle new PaddleOCR format with predict method
+            if isinstance(result, list) and len(result) > 0:
+                first_result = result[0]
+                if isinstance(first_result, dict):
+                    # New format: dictionary with rec_texts and rec_scores
+                    if 'rec_texts' in first_result:
+                        extracted_text = "\n".join(first_result['rec_texts'])
+                        confidence_scores = first_result.get('rec_scores', [])
+                    elif 'text' in first_result:
+                        extracted_text = first_result['text']
+                        confidence_scores = [first_result.get('confidence', 0.9)]
+                else:
+                    # Old format: list of detection results
+                    for page_result in result:
+                        if page_result:
+                            for line in page_result:
+                                if len(line) >= 2:
+                                    text = line[1][0]  # Extracted text
+                                    confidence = line[1][1]  # Confidence score
+
+                                    extracted_text += text + "\n"
+                                    confidence_scores.append(confidence)
+            elif isinstance(result, dict):
+                # Direct dictionary result
+                if 'rec_texts' in result:
+                    extracted_text = "\n".join(result['rec_texts'])
+                    confidence_scores = result.get('rec_scores', [])
+                elif 'text' in result:
+                    extracted_text = result['text']
+                    confidence_scores = [result.get('confidence', 0.9)]
         
         # Calculate average confidence
         avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0

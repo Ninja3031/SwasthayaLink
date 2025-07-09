@@ -128,6 +128,54 @@ Attending Physician: Dr. Wilson, MD`
   return mockTexts[Math.floor(Math.random() * mockTexts.length)];
 }
 
+// Python OCR function using the standalone script
+function performPythonOCR(imagePath) {
+  return new Promise((resolve, reject) => {
+    console.log('🐍 Using Python OCR script:', imagePath);
+
+    // Use the standalone Python OCR script
+    const pythonProcess = spawn('python3', ['paddle_ocr.py', imagePath]);
+
+    let output = '';
+    let error = '';
+
+    pythonProcess.stdout.on('data', (data) => {
+      output += data.toString();
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      error += data.toString();
+    });
+
+    pythonProcess.on('close', (code) => {
+      if (code === 0) {
+        try {
+          const result = JSON.parse(output);
+          if (result.success) {
+            console.log('✅ Python OCR successful');
+            resolve(result.text || '');
+          } else {
+            console.log('⚠️ Python OCR failed:', result.error);
+            reject(new Error(result.error || 'Python OCR processing failed'));
+          }
+        } catch (e) {
+          console.log('⚠️ Failed to parse Python OCR output:', e.message);
+          reject(new Error('Failed to parse Python OCR output: ' + e.message));
+        }
+      } else {
+        console.log('⚠️ Python OCR process failed with code:', code);
+        reject(new Error(`Python OCR process failed with code ${code}: ${error}`));
+      }
+    });
+
+    // Add timeout
+    setTimeout(() => {
+      pythonProcess.kill();
+      reject(new Error('Python OCR timeout after 60 seconds'));
+    }, 60000);
+  });
+}
+
 // Actual PaddleOCR function
 function performPaddleOCR(imagePath) {
   return new Promise((resolve, reject) => {
@@ -135,30 +183,67 @@ function performPaddleOCR(imagePath) {
 import sys
 from paddleocr import PaddleOCR
 import json
+import os
 
 try:
-    # Initialize PaddleOCR with updated parameters
-    ocr = PaddleOCR(use_textline_orientation=True, lang='en')
+    # Initialize PaddleOCR with basic parameters (compatible with all versions)
+    ocr = PaddleOCR(
+        use_textline_orientation=True,  # Enable text orientation detection
+        lang='en'                       # English language
+    )
 
-    # Perform OCR
+    # Get image path from command line
     image_path = sys.argv[1]
-    result = ocr.ocr(image_path, cls=True)
 
-    # Extract text
+    if not os.path.exists(image_path):
+        raise FileNotFoundError(f"Image file not found: {image_path}")
+
+    # Perform OCR (without cls parameter for compatibility)
+    result = ocr.ocr(image_path)
+
+    # Extract text with better formatting
     extracted_text = ""
+    confidence_scores = []
+
     if result and len(result) > 0:
-        for idx in range(len(result)):
-            res = result[idx]
-            if res:  # Check if results exist
-                for line in res:
-                    if len(line) >= 2:
-                        extracted_text += line[1][0] + "\\n"
+        for page_idx in range(len(result)):
+            page_result = result[page_idx]
+            if page_result:  # Check if results exist for this page
+                for line in page_result:
+                    if len(line) >= 2 and line[1]:
+                        text = line[1][0]  # Extracted text
+                        confidence = line[1][1]  # Confidence score
+
+                        # Only include text with reasonable confidence
+                        if confidence > 0.5:  # 50% confidence threshold
+                            extracted_text += text + "\\n"
+                            confidence_scores.append(confidence)
+
+    # Calculate average confidence
+    avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0
+
+    # Clean up the extracted text
+    extracted_text = extracted_text.strip()
 
     # Return result as JSON
-    print(json.dumps({"text": extracted_text.strip(), "success": True}))
+    result_data = {
+        "text": extracted_text,
+        "success": True,
+        "confidence": round(avg_confidence, 3),
+        "lines_detected": len(confidence_scores),
+        "has_text": len(extracted_text) > 0
+    }
+
+    print(json.dumps(result_data))
 
 except Exception as e:
-    print(json.dumps({"text": "", "success": False, "error": str(e)}))
+    error_result = {
+        "text": "",
+        "success": False,
+        "error": str(e),
+        "has_text": False
+    }
+    print(json.dumps(error_result))
 `;
 
     // Write Python script to temporary file
@@ -188,32 +273,71 @@ except Exception as e:
       if (code === 0) {
         try {
           const result = JSON.parse(output);
-          resolve(result.text);
+          if (result.success) {
+            resolve(result.text || '');
+          } else {
+            reject(new Error(result.error || 'OCR processing failed'));
+          }
         } catch (e) {
-          reject(new Error('Failed to parse OCR output'));
+          reject(new Error('Failed to parse OCR output: ' + e.message));
         }
       } else {
-        reject(new Error(`OCR process failed: ${error}`));
+        reject(new Error(`OCR process failed with code ${code}: ${error}`));
       }
     });
   });
 }
 
-// OCR endpoint
+// OCR endpoint - supports both file upload and filePath (like patient portal)
 app.post('/ocr', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
+    let filePath;
+    let filename;
+
+    // Check if this is a file upload (doctor portal) or filePath request (patient portal style)
+    if (req.file) {
+      // File upload approach (current doctor portal)
+      filePath = req.file.path;
+      filename = req.file.originalname;
+      console.log(`Processing OCR for uploaded file: ${filename}`);
+    } else if (req.body.filePath) {
+      // FilePath approach (patient portal style)
+      filePath = req.body.filePath;
+      filename = path.basename(filePath);
+      console.log(`Processing OCR for file path: ${filePath}`);
+
+      // Handle relative paths - convert to absolute
+      if (!path.isAbsolute(filePath)) {
+        const parentDir = path.dirname(path.dirname(__dirname));
+        filePath = path.join(parentDir, filePath);
+        console.log(`Converted to absolute path: ${filePath}`);
+      }
+
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          error: 'File not found',
+          details: `File not found: ${filePath}`
+        });
+      }
+    } else {
+      return res.status(400).json({ error: 'No file uploaded or filePath provided' });
     }
 
-    const filePath = req.file.path;
-    console.log(`Processing OCR for file: ${req.file.originalname}`);
-
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Simulate processing time (reduced for better UX)
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     try {
-      console.log(`📄 Processing file: ${req.file.originalname} (${(req.file.size / 1024 / 1024).toFixed(2)} MB)`);
+      // Get file size for logging
+      let fileSize = 0;
+      if (req.file) {
+        fileSize = req.file.size;
+      } else if (fs.existsSync(filePath)) {
+        const stats = fs.statSync(filePath);
+        fileSize = stats.size;
+      }
+
+      console.log(`📄 Processing file: ${filename} (${(fileSize / 1024 / 1024).toFixed(2)} MB)`);
 
       // Try to use actual PaddleOCR first
       let extractedText;
@@ -221,18 +345,20 @@ app.post('/ocr', upload.single('file'), async (req, res) => {
 
       try {
         console.log('🔍 Attempting PaddleOCR processing...');
-        extractedText = await performPaddleOCR(filePath);
-        processingMethod = 'PaddleOCR';
+
+        // Use the standalone Python OCR script
+        extractedText = await performPythonOCR(filePath);
+        processingMethod = 'PaddleOCR (Python Script)';
         console.log('✅ PaddleOCR processing successful');
       } catch (paddleError) {
         console.log('⚠️ PaddleOCR failed:', paddleError.message);
         console.log('🔄 Falling back to mock OCR for demonstration');
-        extractedText = performMockOCR(req.file.originalname);
+        extractedText = performMockOCR(filename);
         processingMethod = 'Mock OCR (PaddleOCR unavailable)';
       }
 
-      // Clean up uploaded file
-      if (fs.existsSync(filePath)) {
+      // Clean up uploaded file (only if it was uploaded, not if it was a filePath)
+      if (req.file && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
 
@@ -241,8 +367,8 @@ app.post('/ocr', upload.single('file'), async (req, res) => {
         console.log('⚠️ No text detected in document, providing helpful feedback');
         extractedText = `No readable text detected in this document.
 
-Document: ${req.file.originalname}
-Size: ${(req.file.size / 1024 / 1024).toFixed(2)} MB
+Document: ${filename}
+Size: ${(fileSize / 1024 / 1024).toFixed(2)} MB
 Processing: ${processingMethod}
 
 Possible reasons:
@@ -258,7 +384,7 @@ You can manually add text content if needed.`;
       res.json({
         success: true,
         text: extractedText,
-        filename: req.file.originalname,
+        filename: filename,
         processingMethod: processingMethod,
         hasText: extractedText && extractedText.trim().length > 0,
         message: `OCR processing completed successfully using ${processingMethod}`
@@ -267,8 +393,8 @@ You can manually add text content if needed.`;
     } catch (ocrError) {
       console.error('OCR processing error:', ocrError);
       
-      // Clean up uploaded file
-      if (fs.existsSync(filePath)) {
+      // Clean up uploaded file (only if it was uploaded, not if it was a filePath)
+      if (req.file && fs.existsSync(filePath)) {
         fs.unlinkSync(filePath);
       }
 
