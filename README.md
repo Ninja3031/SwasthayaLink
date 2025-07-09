@@ -88,6 +88,10 @@ SwasthayaLink is a smart healthcare dashboard and consultation platform designed
 **See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment instructions**
 
 backend deployment link = https://swasthayalink-backend.onrender.com
+<img width="1470" alt="doctor portal " src="https://github.com/user-attachments/assets/339cce6d-ad9b-4c93-a1ee-cb861200dcba" />
+<img width="1470" alt="doctor portal ai risk checker" src="https://github.com/user-attachments/assets/fe521af2-0628-4d7d-9d6e-4c460e41802b" />
+<img width="1470" alt="doctor portal profile" src="https://github.com/user-attachments/assets/1a25a162-d551-4f5b-ae13-92e0eef2e0e2" />
+<img width="1470" alt="doctor portal appointments" src="https://github.com/user-attachments/assets/60c38e52-2756-4fac-90ff-f514904bf3ec" />
 
 
 
