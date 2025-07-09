@@ -83,7 +83,7 @@ SwasthayaLink is a smart healthcare dashboard and consultation platform designed
 **Backend on Render + Frontends on Vercel**
 
 1. **Backend on Render**: Create Web Service, connect GitHub, set environment variables
-2. **Frontends on Vercel**: Create projects for `temp-frontend` and `Doctorside` directories
+2. **Frontend on Vercel**: Deploy unified portal from `temp-frontend` directory
 
 **See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment instructions**
 

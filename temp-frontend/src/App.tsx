@@ -41,15 +41,7 @@ function App() {
     return <LoginForm />;
   }
 
-  // Redirect doctors to doctor portal
-  if (user?.userType === 'doctor') {
-    window.location.href = '/Doctorside/index.html';
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-lg">Redirecting to Doctor Portal...</div>
-      </div>
-    );
-  }
+  // Role-based routing - no redirect needed, handle within same app
 
   return (
     <Router>
@@ -63,7 +55,14 @@ function App() {
 
           {/* Patient Routes */}
           <Route path="/" element={<MainLayout />}>
-            <Route index element={<Dashboard />} />
+            <Route
+              index
+              element={
+                user?.userType === 'doctor' ?
+                  <Navigate to="/doctor" replace /> :
+                  <Dashboard />
+              }
+            />
             <Route path="health-records" element={<HealthRecords />} />
             <Route path="medications" element={<MedicationsPharmacy />} />
             <Route path="appointments" element={<Appointments />} />
@@ -87,6 +86,14 @@ function App() {
             <Route path="settings" element={<DoctorSettings />} />
             <Route path="profile" element={<DoctorProfile />} />
           </Route>
+
+          {/* Fallback */}
+          <Route
+            path="*"
+            element={
+              <Navigate to={user?.userType === 'doctor' ? '/doctor' : '/'} replace />
+            }
+          />
         </Routes>
       </div>
     </Router>

@@ -19,7 +19,7 @@ import {
   Share2,
   Zap,
 } from 'lucide-react';
-import { mockCurrentUser } from '../../data/mockData';
+import { useAuth } from '../../hooks/useAuth';
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -52,8 +52,9 @@ const doctorNavigation = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ isCollapsed, onToggle }) => {
-  const navigation = mockCurrentUser.userType === 'patient' ? patientNavigation : doctorNavigation;
-  const isDoctor = mockCurrentUser.userType === 'doctor';
+  const { user } = useAuth();
+  const navigation = user?.userType === 'patient' ? patientNavigation : doctorNavigation;
+  const isDoctor = user?.userType === 'doctor';
 
   return (
     <div

@@ -44,9 +44,9 @@ This guide will help you deploy the SwasthayaLink application with the backend o
 
 After deployment, note your backend URL (e.g., `https://swasthayalink-backend.onrender.com`)
 
-## Frontend Deployment on Vercel
+## Frontend Deployment on Vercel (Unified Portal)
 
-### 1. Deploy Patient Portal
+### 1. Deploy Unified Frontend
 
 1. Go to Vercel Dashboard (https://vercel.com/dashboard)
 2. Click "New Project"
@@ -63,25 +63,21 @@ After deployment, note your backend URL (e.g., `https://swasthayalink-backend.on
 
 7. Deploy
 
-### 2. Deploy Doctor Portal
-
-1. Create another new project on Vercel
-2. Import the same GitHub repository
-3. Select the `Doctorside` folder as the root directory
-4. Configure same as patient portal
-5. Add the same environment variable:
-   - `VITE_API_URL`: Your Render backend URL
-
-6. Deploy
-
-### 3. Update Backend CORS
+### 2. Update Backend CORS
 
 1. Go back to your Render dashboard
-2. Update the `CORS_ORIGIN` environment variable with your Vercel URLs:
+2. Update the `CORS_ORIGIN` environment variable with your Vercel URL:
    ```
-   https://your-patient-portal.vercel.app,https://your-doctor-portal.vercel.app
+   https://your-swasthayalink.vercel.app
    ```
 3. Redeploy the backend service
+
+### 3. Access the Application
+
+- **Patient Portal**: `https://your-swasthayalink.vercel.app/`
+- **Doctor Portal**: `https://your-swasthayalink.vercel.app/doctor`
+
+The application will automatically redirect users to the appropriate portal based on their role after login.
 
 ## Environment Variables Summary
 
@@ -91,10 +87,10 @@ NODE_ENV=production
 PORT=3000
 MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/swasthayalink
 JWT_SECRET=your-secure-jwt-secret
-CORS_ORIGIN=https://patient-portal.vercel.app,https://doctor-portal.vercel.app
+CORS_ORIGIN=https://your-swasthayalink.vercel.app
 ```
 
-### Frontend (Vercel)
+### Frontend (Vercel) - Unified Portal
 ```
 VITE_API_URL=https://your-backend.onrender.com
 ```
