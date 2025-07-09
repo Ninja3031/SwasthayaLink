@@ -27,7 +27,7 @@ import { DoctorSettings } from './pages/doctor/DoctorSettings';
 import { DoctorProfile } from './pages/doctor/DoctorProfile';
 
 function App() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -39,6 +39,16 @@ function App() {
 
   if (!isAuthenticated) {
     return <LoginForm />;
+  }
+
+  // Redirect doctors to doctor portal
+  if (user?.userType === 'doctor') {
+    window.location.href = '/Doctorside/index.html';
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-lg">Redirecting to Doctor Portal...</div>
+      </div>
+    );
   }
 
   return (

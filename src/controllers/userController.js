@@ -18,10 +18,25 @@ exports.getProfile = async (req, res) => {
       bloodGroup: user.bloodGroup,
       emergencyContact: user.emergencyContact,
       photo: user.photo,
+      address: user.address,
     };
+
+    // Add doctor-specific fields to response if user is a doctor
+    if (user.role === 'doctor') {
+      userResponse.specialization = user.specialization;
+      userResponse.licenseNumber = user.licenseNumber;
+      userResponse.hospital = user.hospital;
+      userResponse.yearsOfExperience = user.yearsOfExperience;
+      userResponse.consultationFee = user.consultationFee;
+      userResponse.qualifications = user.qualifications;
+      userResponse.languages = user.languages;
+      userResponse.availableSlots = user.availableSlots;
+      userResponse.isVerified = user.isVerified;
+    }
 
     res.json(userResponse);
   } catch (err) {
+    console.error('Get profile error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };

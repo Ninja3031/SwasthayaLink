@@ -4,27 +4,52 @@ const path = require('path');
 
 exports.uploadReport = async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    console.log('Upload report request received');
+    console.log('File:', req.file);
+    console.log('User:', req.user);
+
+    if (!req.file) {
+      console.log('No file uploaded');
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
     const filePath = req.file.path;
     const fileType = req.file.mimetype;
-    // Call local PaddleOCR microservice
+    console.log('File path:', filePath, 'File type:', fileType);
+
+    // Call local PaddleOCR microservice on port 3001 (optional - will skip if not available)
     let ocrResult = null;
     try {
-      const ocrRes = await axios.post('http://localhost:5001/ocr', { filePath });
+      console.log('Attempting OCR processing on localhost:3001...');
+      const ocrRes = await axios.post('http://localhost:3001/ocr', { filePath });
       ocrResult = ocrRes.data;
+      console.log('OCR processing successful');
     } catch (ocrErr) {
-      ocrResult = { error: 'OCR failed', details: ocrErr.message };
+      console.log('OCR processing failed (this is optional):', ocrErr.message);
+      ocrResult = {
+        error: 'OCR service unavailable',
+        details: 'OCR processing will be available when the service is running on port 3001',
+        extractedText: 'OCR processing not available'
+      };
     }
+
+    console.log('Creating report record...');
     const report = new Report({
       user: req.user.userId,
       filePath,
       fileType,
       ocrResult,
     });
+
     await report.save();
+    console.log('Report saved successfully:', report._id);
+
     res.status(201).json({ message: 'Report uploaded', report });
   } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    console.error('Upload report error:', err);
+    console.error('Error details:', err.message);
+    console.error('Stack trace:', err.stack);
+    res.status(500).json({ error: 'Server error', details: err.message });
   }
 };
 

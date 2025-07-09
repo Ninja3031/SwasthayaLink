@@ -39,9 +39,19 @@ export const HealthRecords: React.FC = () => {
     try {
       setIsLoading(true);
       setError('');
+      console.log('Fetching reports...');
       const fetchedReports = await reportService.getReports();
-      setReports(fetchedReports);
+      console.log('Fetched reports:', fetchedReports);
+
+      // Ensure all reports have proper IDs for React keys
+      const reportsWithIds = fetchedReports.map(report => ({
+        ...report,
+        id: report.id || (report as any)._id || `report-${Date.now()}-${Math.random()}`
+      }));
+
+      setReports(reportsWithIds);
     } catch (err: any) {
+      console.error('Failed to fetch reports:', err);
       setError(err.response?.data?.error || 'Failed to fetch reports');
     } finally {
       setIsLoading(false);
@@ -77,13 +87,33 @@ export const HealthRecords: React.FC = () => {
     setSuccess('');
 
     try {
+      console.log('Starting upload for file:', selectedFile.name, 'Size:', selectedFile.size, 'Type:', selectedFile.type);
       const result = await reportService.uploadReport(selectedFile);
-      setReports([result.report, ...reports]);
-      setSuccess('Report uploaded and processed successfully!');
+      console.log('Upload successful:', result);
+      console.log('Report data:', result.report);
+
+      // Add the new report to the list with proper ID mapping
+      const newReport = {
+        ...result.report,
+        id: (result.report as any)._id || result.report.id, // Handle MongoDB _id
+      };
+
+      setReports([newReport, ...reports]);
+
+      // Show appropriate success message based on OCR status
+      if (result.report.ocrResult?.error) {
+        setSuccess('Report uploaded successfully! OCR processing is currently unavailable, but your file is safely stored.');
+      } else {
+        setSuccess('Report uploaded and processed successfully!');
+      }
+
       setIsUploadModalOpen(false);
       setSelectedFile(null);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to upload report');
+      console.error('Upload failed:', err);
+      console.error('Error response:', err.response);
+      console.error('Error data:', err.response?.data);
+      setError(err.response?.data?.error || err.message || 'Failed to upload report');
     } finally {
       setIsUploading(false);
     }
@@ -281,9 +311,9 @@ export const HealthRecords: React.FC = () => {
                     <div className="bg-gray-50 rounded-lg p-3">
                       <p className="text-xs font-medium text-gray-700 mb-2">OCR Processing</p>
                       {report.ocrResult.error ? (
-                        <div className="flex items-center text-xs text-red-600">
+                        <div className="flex items-center text-xs text-orange-600">
                           <AlertCircle className="h-3 w-3 mr-1" />
-                          <span>Processing failed</span>
+                          <span>OCR service unavailable</span>
                         </div>
                       ) : (
                         <div className="space-y-1">
@@ -291,9 +321,9 @@ export const HealthRecords: React.FC = () => {
                             <CheckCircle className="h-3 w-3 mr-1" />
                             <span>Successfully processed</span>
                           </div>
-                          {report.ocrResult.extractedText && (
+                          {(report.ocrResult.extractedText || report.ocrResult.extracted_text) && (
                             <p className="text-xs text-gray-600 truncate">
-                              {report.ocrResult.extractedText.substring(0, 100)}...
+                              {(report.ocrResult.extractedText || report.ocrResult.extracted_text).substring(0, 100)}...
                             </p>
                           )}
                         </div>
@@ -455,12 +485,12 @@ export const HealthRecords: React.FC = () => {
                 <label className="block text-sm font-medium text-gray-700">Status</label>
                 <p className="mt-1">
                   {selectedReport.ocrResult?.error ? (
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                      Processing Failed
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                      OCR Unavailable
                     </span>
                   ) : (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                      Processed Successfully
+                      OCR Processed
                     </span>
                   )}
                 </p>
@@ -474,20 +504,20 @@ export const HealthRecords: React.FC = () => {
                 </label>
                 <div className="bg-gray-50 rounded-lg p-4 max-h-64 overflow-y-auto">
                   <p className="text-sm text-gray-900 whitespace-pre-wrap">
-                    {selectedReport.ocrResult.extractedText || 'No text extracted'}
+                    {selectedReport.ocrResult.extractedText || selectedReport.ocrResult.extracted_text || 'No text extracted'}
                   </p>
                 </div>
               </div>
             )}
 
-            {selectedReport.ocrResult?.structuredData && (
+            {(selectedReport.ocrResult?.structuredData || selectedReport.ocrResult?.structured_data) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Structured Data
                 </label>
                 <div className="bg-gray-50 rounded-lg p-4">
                   <pre className="text-sm text-gray-900 whitespace-pre-wrap">
-                    {JSON.stringify(selectedReport.ocrResult.structuredData, null, 2)}
+                    {JSON.stringify(selectedReport.ocrResult.structuredData || selectedReport.ocrResult.structured_data, null, 2)}
                   </pre>
                 </div>
               </div>

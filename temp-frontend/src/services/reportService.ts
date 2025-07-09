@@ -26,15 +26,23 @@ export interface Report {
 export const reportService = {
   // Upload a new report file
   uploadReport: async (file: File): Promise<ReportUploadResponse> => {
+    console.log('reportService: Starting upload for file:', file.name);
     const formData = new FormData();
-    formData.append('report', file);
+    formData.append('file', file); // Changed from 'report' to 'file' to match backend
 
-    const response = await api.post('/reports/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
-    return response.data;
+    console.log('reportService: FormData created, making API call to /reports/upload');
+    try {
+      const response = await api.post('/reports/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      console.log('reportService: Upload successful, response:', response.data);
+      return response.data;
+    } catch (error) {
+      console.error('reportService: Upload failed:', error);
+      throw error;
+    }
   },
 
   // Get all reports for current user

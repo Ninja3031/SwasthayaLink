@@ -10,6 +10,8 @@ const reportRoutes = require('./routes/report');
 const healthDataRoutes = require('./routes/healthData');
 const medicationRoutes = require('./routes/medication');
 const appointmentRoutes = require('./routes/appointment');
+const doctorRoutes = require('./routes/doctor');
+const patientRoutes = require('./routes/patient');
 
 const app = express();
 
@@ -40,6 +42,8 @@ app.use('/reports', reportRoutes);
 app.use('/healthdata', healthDataRoutes);
 app.use('/medications', medicationRoutes);
 app.use('/appointments', appointmentRoutes);
+app.use('/doctor', doctorRoutes);
+app.use('/patients', patientRoutes);
 
 // Routes placeholder
 app.get('/', (req, res) => {

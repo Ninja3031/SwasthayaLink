@@ -63,12 +63,14 @@ export const Appointments: React.FC = () => {
     setSuccess('');
 
     try {
+      console.log('Booking appointment with data:', appointmentForm);
       await bookAppointment(appointmentForm);
       setSuccess('Appointment booked successfully!');
       setIsBookModalOpen(false);
       resetForm();
     } catch (err) {
       console.error('Failed to book appointment:', err);
+      console.error('Error details:', err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -433,8 +435,8 @@ export const Appointments: React.FC = () => {
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
             >
               <option value="consultation">Consultation</option>
-              <option value="follow_up">Follow-up</option>
-              <option value="checkup">Routine Checkup</option>
+              <option value="follow-up">Follow-up</option>
+              <option value="routine">Routine Checkup</option>
               <option value="emergency">Emergency</option>
             </select>
           </div>

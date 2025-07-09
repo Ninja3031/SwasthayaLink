@@ -24,10 +24,16 @@ import { useMedications } from '../hooks/useMedications';
 
 export const Dashboard: React.FC = () => {
   const [isGlucoseModalOpen, setIsGlucoseModalOpen] = useState(false);
+  const [isBPModalOpen, setIsBPModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [newGlucoseReading, setNewGlucoseReading] = useState({
     value: '',
     type: 'fasting' as 'fasting' | 'random' | 'post_meal',
+    notes: '',
+  });
+  const [newBPReading, setNewBPReading] = useState({
+    systolic: '',
+    diastolic: '',
     notes: '',
   });
 
@@ -45,7 +51,8 @@ export const Dashboard: React.FC = () => {
 
   // Get latest readings
   const latestGlucoseReading = getLatestReading('glucose');
-  const latestBPReading = getLatestReading('blood_pressure_systolic');
+  const latestBPSystolicReading = getLatestReading('blood_pressure_systolic');
+  const latestBPDiastolicReading = getLatestReading('blood_pressure_diastolic');
   const latestWeightReading = getLatestReading('weight');
   const latestHeartRateReading = getLatestReading('heart_rate');
 
@@ -84,6 +91,35 @@ export const Dashboard: React.FC = () => {
     }
   };
 
+  const handleAddBPReading = async () => {
+    if (!newBPReading.systolic || !newBPReading.diastolic) return;
+
+    setIsSubmitting(true);
+    try {
+      // Add systolic reading
+      await addHealthData({
+        type: 'blood_pressure_systolic',
+        value: parseFloat(newBPReading.systolic),
+        unit: 'mmHg',
+      });
+
+      // Add diastolic reading
+      await addHealthData({
+        type: 'blood_pressure_diastolic',
+        value: parseFloat(newBPReading.diastolic),
+        unit: 'mmHg',
+      });
+
+      setNewBPReading({ systolic: '', diastolic: '', notes: '' });
+      setIsBPModalOpen(false);
+    } catch (error) {
+      console.error('Failed to add BP reading:', error);
+      // You could add a toast notification here
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -94,14 +130,25 @@ export const Dashboard: React.FC = () => {
             Welcome back, {user?.name}! Here's your health overview.
           </p>
         </div>
-        <Button
-          onClick={() => setIsGlucoseModalOpen(true)}
-          icon={Plus}
-          className="shadow-lg"
-          disabled={isLoading}
-        >
-          Add Glucose Reading
-        </Button>
+        <div className="flex space-x-3">
+          <Button
+            onClick={() => setIsGlucoseModalOpen(true)}
+            icon={Plus}
+            className="shadow-lg"
+            disabled={isLoading}
+          >
+            Add Glucose Reading
+          </Button>
+          <Button
+            onClick={() => setIsBPModalOpen(true)}
+            icon={Plus}
+            variant="secondary"
+            className="shadow-lg"
+            disabled={isLoading}
+          >
+            Add BP Reading
+          </Button>
+        </div>
       </div>
 
       {/* Error State */}
@@ -156,7 +203,9 @@ export const Dashboard: React.FC = () => {
                   </div>
                 ) : (
                   <p className="text-2xl font-bold text-red-600">
-                    {latestBPReading?.value || '--'} {latestBPReading?.unit || 'mmHg'}
+                    {latestBPSystolicReading?.value && latestBPDiastolicReading?.value
+                      ? `${latestBPSystolicReading.value}/${latestBPDiastolicReading.value}`
+                      : '--'} {latestBPSystolicReading?.unit || 'mmHg'}
                   </p>
                 )}
               </div>
@@ -165,8 +214,8 @@ export const Dashboard: React.FC = () => {
           </CardHeader>
           <CardContent className="pt-0">
             <p className="text-xs text-gray-500">
-              {latestBPReading?.date
-                ? new Date(latestBPReading.date).toLocaleDateString()
+              {latestBPSystolicReading?.date
+                ? new Date(latestBPSystolicReading.date).toLocaleDateString()
                 : 'No data available'}
             </p>
           </CardContent>
@@ -442,6 +491,82 @@ export const Dashboard: React.FC = () => {
             <Button
               onClick={handleAddGlucoseReading}
               disabled={isSubmitting || !newGlucoseReading.value}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  Adding...
+                </>
+              ) : (
+                'Add Reading'
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Add BP Reading Modal */}
+      <Modal
+        isOpen={isBPModalOpen}
+        onClose={() => setIsBPModalOpen(false)}
+        title="Add Blood Pressure Reading"
+      >
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="bp-systolic" className="block text-sm font-medium text-gray-700">
+                Systolic (mmHg)
+              </label>
+              <input
+                type="number"
+                id="bp-systolic"
+                value={newBPReading.systolic}
+                onChange={(e) => setNewBPReading({ ...newBPReading, systolic: e.target.value })}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                placeholder="e.g., 120"
+                required
+              />
+            </div>
+            <div>
+              <label htmlFor="bp-diastolic" className="block text-sm font-medium text-gray-700">
+                Diastolic (mmHg)
+              </label>
+              <input
+                type="number"
+                id="bp-diastolic"
+                value={newBPReading.diastolic}
+                onChange={(e) => setNewBPReading({ ...newBPReading, diastolic: e.target.value })}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+                placeholder="e.g., 80"
+                required
+              />
+            </div>
+          </div>
+          <div>
+            <label htmlFor="bp-notes" className="block text-sm font-medium text-gray-700">
+              Notes (optional)
+            </label>
+            <textarea
+              id="bp-notes"
+              value={newBPReading.notes}
+              onChange={(e) => setNewBPReading({ ...newBPReading, notes: e.target.value })}
+              rows={3}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-red-500 focus:ring-red-500"
+              placeholder="Any additional notes..."
+            />
+          </div>
+          <div className="flex justify-end space-x-3">
+            <Button
+              variant="outline"
+              onClick={() => setIsBPModalOpen(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddBPReading}
+              disabled={isSubmitting || !newBPReading.systolic || !newBPReading.diastolic}
+              variant="secondary"
             >
               {isSubmitting ? (
                 <>

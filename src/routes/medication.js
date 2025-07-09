@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const medicationController = require('../controllers/medicationController');
 const authMiddleware = require('../middleware/auth');
+const patientAuth = require('../middleware/patientAuth');
 
-// All routes require authentication
+// All routes require authentication and patient role
 router.use(authMiddleware);
+router.use(patientAuth);
 
 // GET /api/medications - Get all medications for user
 router.get('/', medicationController.getMedications);

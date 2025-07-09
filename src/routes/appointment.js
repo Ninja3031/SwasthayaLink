@@ -2,9 +2,11 @@ const express = require('express');
 const router = express.Router();
 const appointmentController = require('../controllers/appointmentController');
 const authMiddleware = require('../middleware/auth');
+const patientAuth = require('../middleware/patientAuth');
 
-// All routes require authentication
+// All routes require authentication and patient role
 router.use(authMiddleware);
+router.use(patientAuth);
 
 // GET /api/appointments - Get all appointments for user
 router.get('/', appointmentController.getAppointments);

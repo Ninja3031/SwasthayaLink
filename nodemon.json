@@ -1,0 +1,35 @@
+{
+  "watch": [
+    "src/"
+  ],
+  "ignore": [
+    "node_modules/",
+    "venv/",
+    "env/",
+    ".env/",
+    ".venv/",
+    "ocr-service/venv/",
+    "ocr-service/env/",
+    "__pycache__/",
+    "*.pyc",
+    "*.pyo",
+    "*.pyd",
+    "uploads/",
+    "*.log",
+    "logs/",
+    ".tmp/",
+    "temp/",
+    "tmp/",
+    ".vscode/",
+    ".idea/",
+    "*.swp",
+    "*.swo",
+    ".DS_Store",
+    "Thumbs.db"
+  ],
+  "ext": "js,json",
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "delay": 1000
+}

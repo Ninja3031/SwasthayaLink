@@ -47,9 +47,12 @@ export const useAppointments = () => {
       setIsLoading(true);
       setError(null);
 
+      console.log('fetchAppointments: Fetching appointments...');
       const appointmentsData = await appointmentService.getAppointments();
+      console.log('fetchAppointments: Received appointments:', appointmentsData);
       setAppointments(appointmentsData);
     } catch (err: any) {
+      console.error('fetchAppointments: Error:', err);
       setError(err.message || 'Failed to fetch appointments');
     } finally {
       setIsLoading(false);
@@ -59,20 +62,32 @@ export const useAppointments = () => {
   // Book new appointment
   const bookAppointment = useCallback(async (appointmentData: AppointmentForm): Promise<Appointment> => {
     try {
-      const newAppointment = await appointmentService.addAppointment({
+      console.log('useAppointments: Booking appointment with data:', appointmentData);
+      const appointmentPayload = {
         ...appointmentData,
-        patientName: 'Current User', // This should come from user context
-        status: 'scheduled',
-      });
+        status: 'scheduled' as const,
+      };
+      console.log('useAppointments: Sending payload:', appointmentPayload);
+
+      const newAppointment = await appointmentService.addAppointment(appointmentPayload);
+      console.log('useAppointments: Received response:', newAppointment);
 
       setAppointments(prev => [newAppointment, ...prev]);
+
+      // Refetch appointments to ensure we have the latest data
+      setTimeout(() => {
+        fetchAppointments();
+      }, 100);
+
       return newAppointment;
     } catch (err: any) {
+      console.error('useAppointments: Error booking appointment:', err);
+      console.error('useAppointments: Error response:', err.response?.data);
       const errorMessage = err.response?.data?.error || 'Failed to book appointment';
       setError(errorMessage);
       throw new Error(errorMessage);
     }
-  }, []);
+  }, [fetchAppointments]);
 
   // Update appointment
   const updateAppointment = useCallback(async (id: string, updates: Partial<Appointment>): Promise<Appointment> => {
@@ -103,11 +118,42 @@ export const useAppointments = () => {
 
   // Get upcoming appointments
   const getUpcomingAppointments = useCallback(() => {
+    console.log('getUpcomingAppointments: All appointments:', appointments);
     const now = new Date();
-    return appointments.filter(apt => {
-      const appointmentDate = new Date(`${apt.date} ${apt.time}`);
-      return appointmentDate > now && (apt.status === 'scheduled' || apt.status === 'confirmed');
-    }).sort((a, b) => new Date(`${a.date} ${a.time}`).getTime() - new Date(`${b.date} ${b.time}`).getTime());
+    console.log('getUpcomingAppointments: Current time:', now);
+
+    const filtered = appointments.filter(apt => {
+      console.log('getUpcomingAppointments: Checking appointment:', apt);
+      console.log('getUpcomingAppointments: Raw date:', apt.date, 'Raw time:', apt.time);
+      console.log('getUpcomingAppointments: Date type:', typeof apt.date, 'Time type:', typeof apt.time);
+
+      // Try different date parsing approaches
+      let appointmentDate;
+
+      // Try parsing as ISO string first
+      appointmentDate = new Date(apt.date);
+      if (isNaN(appointmentDate.getTime())) {
+        // If that fails, try combining date and time
+        appointmentDate = new Date(`${apt.date} ${apt.time}`);
+        if (isNaN(appointmentDate.getTime())) {
+          // Try with different format
+          appointmentDate = new Date(`${apt.date}T${apt.time}`);
+        }
+      }
+
+      console.log('getUpcomingAppointments: Parsed appointment date:', appointmentDate);
+      const isUpcoming = appointmentDate > now && !isNaN(appointmentDate.getTime());
+      const isValidStatus = apt.status === 'scheduled' || apt.status === 'confirmed';
+      console.log('getUpcomingAppointments: Is upcoming?', isUpcoming, 'Valid status?', isValidStatus);
+      return isUpcoming && isValidStatus;
+    });
+
+    console.log('getUpcomingAppointments: Filtered appointments:', filtered);
+
+    const sorted = filtered.sort((a, b) => new Date(`${a.date} ${a.time}`).getTime() - new Date(`${b.date} ${b.time}`).getTime());
+    console.log('getUpcomingAppointments: Sorted appointments:', sorted);
+
+    return sorted;
   }, [appointments]);
 
   // Get appointments by status

@@ -39,7 +39,7 @@ export const appointmentService = {
   },
 
   // Add a new appointment
-  addAppointment: async (appointmentData: Omit<Appointment, 'id'>): Promise<Appointment> => {
+  addAppointment: async (appointmentData: Omit<Appointment, 'id' | 'patientName'>): Promise<Appointment> => {
     const response = await api.post('/appointments', appointmentData);
     return {
       ...response.data,

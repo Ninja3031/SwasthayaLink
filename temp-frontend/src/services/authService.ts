@@ -13,6 +13,12 @@ export interface RegisterData {
   dateOfBirth?: string;
   gender?: string;
   abhaId?: string;
+  role?: string;
+  // Doctor-specific fields
+  specialization?: string;
+  licenseNumber?: string;
+  hospital?: string;
+  yearsOfExperience?: number;
 }
 
 export interface AuthResponse {
