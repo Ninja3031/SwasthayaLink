@@ -1,3 +1,4 @@
+<img width="1470" alt="doctor portal uhi integration" src="https://github.com/user-attachments/assets/0ae96af2-eca2-479a-a32a-31a3c411e9de" />
 ##Problem Statement
 **Current healthcare systems** are fragmented and inefficient, making them difficult to use for both doctors and patients.
 **Patients lack a unified platform** to securely access and share their medical records.
