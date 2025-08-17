@@ -23,6 +23,8 @@ SwasthayaLink is a smart healthcare dashboard and consultation platform designed
 - **AI Risk Prediction**: Integrates a machine learning regression model (via FastAPI) to help predict patient risk levels and support clinical    decision-making.
 - **Modern and Responsive UI**: Built with a focus on a clean, accessible, and efficient user experience.
 
+
+##Demo Video Link is in the Presentation itself. 
 ## Tech Stack
 
 - **Frontend**: React, TypeScript, Tailwind CSS, Lucide Icons
